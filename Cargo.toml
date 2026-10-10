@@ -1,0 +1,31 @@
+[workspace]
+resolver = "2"
+members = [
+    "svaraflow-core",
+    "svaraflow-asr",
+    "svaraflow-text",
+    "svaraflow-render",
+    "svaraflow-rpc",
+    "svaraflow-cli",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.75"
+authors = ["Th3 A6add0n"]
+license = "MIT"
+repository = "https://github.com/Th3-A6add0n/svaraflow"
+homepage = "https://github.com/Th3-A6add0n/svaraflow"
+readme = "README.md"
+
+[workspace.dependencies]
+svaraflow-core = { path = "svaraflow-core" }
+svaraflow-asr = { path = "svaraflow-asr" }
+svaraflow-text = { path = "svaraflow-text" }
+svaraflow-render = { path = "svaraflow-render" }
+svaraflow-rpc = { path = "svaraflow-rpc" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

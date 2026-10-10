@@ -1,0 +1,47 @@
+# .gitignore
+# Rust
+/target/
+**/*.rs.bk
+
+# Cargo.lock is committed (workspace contains binaries).
+
+# Node / Tauri
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Editors
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+/docs
+
+# Logs
+*.log
+
+# Local models / media (large binaries must not be committed)
+/models/
+/tests/audio/*
+!/tests/audio/.gitkeep
+
+# Tooling
+/tools/.cache/

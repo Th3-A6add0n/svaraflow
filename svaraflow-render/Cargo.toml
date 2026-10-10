@@ -1,0 +1,12 @@
+[package]
+name = "svaraflow-render"
+description = "Caption renderer for SvaraFlow (word-by-word animated captions)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+thiserror = "1"

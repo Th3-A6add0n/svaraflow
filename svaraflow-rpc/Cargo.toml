@@ -1,0 +1,12 @@
+[package]
+name = "svaraflow-rpc"
+description = "JSON-RPC 2.0 server on 127.0.0.1 with a one-time token, for SvaraFlow host adapters."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+thiserror = "1"

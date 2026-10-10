@@ -1,0 +1,12 @@
+[package]
+name = "svaraflow-asr"
+description = "Speech-to-text (whisper.cpp bindings), model selection and Silero VAD for SvaraFlow."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+thiserror = "1"

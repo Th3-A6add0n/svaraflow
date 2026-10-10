@@ -1,0 +1,16 @@
+[package]
+name = "svaraflow-cli"
+description = "Command-line front end for SvaraFlow, reusing the core, asr, text and render crates."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "svaraflow-cli"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
