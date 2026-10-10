@@ -10,3 +10,26 @@ repository.workspace = true
 
 [dependencies]
 thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Pure-Rust decoding. Pinned to 0.5 on purpose: symphonia 0.6 raises the MSRV
+# to 1.85 (Rust 2024 edition), which would break the workspace's
+# `rust-version = "1.75"`. See docs/DECISIONS.md (ADR-0011).
+symphonia = { version = "0.5", features = [
+    "aac",
+    "alac",
+    "flac",
+    "isomp4",
+    "mp3",
+    "ogg",
+    "pcm",
+    "vorbis",
+    "wav",
+] }
+
+# Sample-rate conversion for the 16 kHz analysis signal.
+rubato = "0.16"
+
+# XML writer for the FCP7 xmeml export.
+quick-xml = "0.37"

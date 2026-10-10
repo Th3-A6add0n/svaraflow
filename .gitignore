@@ -40,8 +40,15 @@ Thumbs.db
 
 # Local models / media (large binaries must not be committed)
 /models/
+
+# tests/audio: ignore everything, then explicitly re-include the tracked
+# markers and the fixtures README. Any WAV you drop into tests/audio/fixtures/
+# stays ignored, which is the point.
 /tests/audio/*
 !/tests/audio/.gitkeep
+!/tests/audio/fixtures/
+/tests/audio/fixtures/*
+!/tests/audio/fixtures/README.md
 
 # Tooling
 /tools/.cache/

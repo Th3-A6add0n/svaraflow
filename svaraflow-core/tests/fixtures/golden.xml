@@ -1,0 +1,97 @@
+<!-- svaraflow-core/tests/fixtures/golden.xml -->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE xmeml SYSTEM "fcpxmlv4.dtd">
+<xmeml version="4">
+  <sequence>
+    <name>Original Sequence - SvaraFlow cut</name>
+    <duration>300</duration>
+    <rate>
+      <ntsc>FALSE</ntsc>
+      <timebase>30</timebase>
+    </rate>
+    <in>-1</in>
+    <out>-1</out>
+    <media>
+      <video>
+        <track>
+          <clipitem id="v1">
+            <name>v1</name>
+            <duration>300</duration>
+            <rate>
+              <ntsc>FALSE</ntsc>
+              <timebase>30</timebase>
+            </rate>
+            <enabled>TRUE</enabled>
+            <start>0</start>
+            <end>300</end>
+            <in>0</in>
+            <out>300</out>
+            <file id="file-v1">
+              <name>interview.mov</name>
+              <pathurl>file://localhost/C%3a/media/interview.mov</pathurl>
+              <rate>
+                <ntsc>FALSE</ntsc>
+                <timebase>30</timebase>
+              </rate>
+              <duration>300</duration>
+              <in>0</in>
+              <out>300</out>
+            </file>
+            <link>
+              <linkclipref>v1</linkclipref>
+              <mediatype>video</mediatype>
+              <trackindex>1</trackindex>
+              <clipindex>1</clipindex>
+            </link>
+            <link>
+              <linkclipref>a1</linkclipref>
+              <mediatype>audio</mediatype>
+              <trackindex>1</trackindex>
+              <clipindex>1</clipindex>
+            </link>
+          </clipitem>
+        </track>
+      </video>
+      <audio>
+        <track>
+          <clipitem id="a1">
+            <name>a1</name>
+            <duration>300</duration>
+            <rate>
+              <ntsc>FALSE</ntsc>
+              <timebase>30</timebase>
+            </rate>
+            <enabled>TRUE</enabled>
+            <start>0</start>
+            <end>300</end>
+            <in>0</in>
+            <out>300</out>
+            <file id="file-a1">
+              <name>interview.mov</name>
+              <pathurl>file://localhost/C%3a/media/interview.mov</pathurl>
+              <rate>
+                <ntsc>FALSE</ntsc>
+                <timebase>30</timebase>
+              </rate>
+              <duration>300</duration>
+              <in>0</in>
+              <out>300</out>
+            </file>
+            <link>
+              <linkclipref>v1</linkclipref>
+              <mediatype>video</mediatype>
+              <trackindex>1</trackindex>
+              <clipindex>1</clipindex>
+            </link>
+            <link>
+              <linkclipref>a1</linkclipref>
+              <mediatype>audio</mediatype>
+              <trackindex>1</trackindex>
+              <clipindex>1</clipindex>
+            </link>
+          </clipitem>
+        </track>
+      </audio>
+    </media>
+  </sequence>
+</xmeml>

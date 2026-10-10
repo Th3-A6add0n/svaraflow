@@ -1,6 +1,6 @@
 [package]
 name = "svaraflow-asr"
-description = "Speech-to-text (whisper.cpp bindings), model selection and Silero VAD for SvaraFlow."
+description = "Speech-to-text (whisper.cpp bindings), model selection, Silero VAD and hybrid mode for SvaraFlow."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,5 +8,18 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+# `vad` pulls in ONNX Runtime through `ort`. Disable with
+# `--no-default-features` on machines that only need the non-VAD parts of
+# the crate.
+default = ["vad"]
+vad = ["dep:ort"]
+
 [dependencies]
+svaraflow-core.workspace = true
 thiserror = "1"
+
+# ONNX Runtime bindings for Silero VAD. The default `download-binaries`
+# feature fetches a prebuilt runtime at build time; set the `ORT_STRATEGY`
+# env var to `system` to link a system runtime instead. See ADR-0018.
+ort = { version = "2.0.0-rc.9", default-features = false, features = ["ndarray", "download-binaries"], optional = true }
