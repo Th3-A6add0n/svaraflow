@@ -1,4 +1,8 @@
 //! `svaraflow-cli timeline` subcommands.
+//!
+//! `from-media` probes a media file with `ffprobe` and writes a
+//! single-track timeline. Attached cover art
+//! (`disposition.attached_pic == 1`) is not treated as a video stream.
 
 use std::path::Path;
 use std::process::Command;
@@ -7,123 +11,403 @@ use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 use svaraflow_core::timeline::{Clip, Fps, Timeline, Track, TrackKind};
 
-use crate::cli::{TimelineCli, TimelineCommand};
+use crate::cli::{FromMediaArgs, TimelineCli, TimelineCommand};
+
+/// Audio properties the XML writer needs but that `timeline.json` does not
+/// carry. Obtained by [`probe_audio_properties`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AudioProperties {
+    /// Channel count: `1` mono, `2` stereo. Falls back to `1`.
+    pub channels: u32,
+    /// Sample rate in Hz. Falls back to `48_000`.
+    pub sample_rate: u32,
+    /// Bit depth. Falls back to `16` when the probe reports `0` or
+    /// nothing, which is the case for every lossy codec.
+    pub bit_depth: u32,
+}
+
+impl Default for AudioProperties {
+    fn default() -> Self {
+        Self {
+            channels: 1,
+            sample_rate: 48_000,
+            bit_depth: 16,
+        }
+    }
+}
+
+/// Runs `ffprobe` on the first audio stream of `path` and returns its
+/// channel count, sample rate and bit depth.
+///
+/// Never fails on missing data: if the file has no audio stream, or the
+/// probe cannot be run, the defaults are returned. Callers that want to
+/// distinguish "no audio" from "probe failed" should check the return with
+/// their own probe.
+///
+/// `ffprobe` must be on `PATH`. When it is not, the defaults are returned
+/// and a note is printed to stderr, because a missing probe is a
+/// configuration problem the user should see.
+pub fn probe_audio_properties(path: &Path) -> AudioProperties {
+    let output = match Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=channels,sample_rate,bits_per_sample",
+            "-of",
+            "json",
+        ])
+        .arg(path)
+        .output()
+    {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!(
+                "warning: ffprobe unavailable for {} ({e}); assuming mono 48 kHz",
+                path.display()
+            );
+            return AudioProperties::default();
+        }
+    };
+
+    if !output.status.success() {
+        eprintln!(
+            "warning: ffprobe failed on {}; assuming mono 48 kHz",
+            path.display()
+        );
+        return AudioProperties::default();
+    }
+
+    let probe: AudioProbe = match serde_json::from_slice(&output.stdout) {
+        Ok(p) => p,
+        Err(_) => {
+            eprintln!(
+                "warning: ffprobe returned invalid JSON for {}; assuming mono 48 kHz",
+                path.display()
+            );
+            return AudioProperties::default();
+        }
+    };
+
+    let Some(stream) = probe.streams.into_iter().next() else {
+        return AudioProperties::default();
+    };
+
+    let channels = stream.channels.unwrap_or(1).max(1);
+    let sample_rate = stream
+        .sample_rate
+        .as_deref()
+        .and_then(|s| s.trim().parse::<u32>().ok())
+        .filter(|r| *r > 0)
+        .unwrap_or(48_000);
+    let bit_depth = stream
+        .bits_per_sample
+        .filter(|b| *b > 0)
+        .unwrap_or(16);
+
+    AudioProperties {
+        channels,
+        sample_rate,
+        bit_depth,
+    }
+}
+
+/// Minimal ffprobe audio-stream JSON.
+#[derive(Debug, Deserialize)]
+struct AudioProbe {
+    #[serde(default)]
+    streams: Vec<AudioStream>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AudioStream {
+    #[serde(default)]
+    channels: Option<u32>,
+    #[serde(default)]
+    sample_rate: Option<String>,
+    #[serde(default)]
+    bits_per_sample: Option<u32>,
+}
 
 /// Runs `timeline <subcommand>`.
 pub fn run(args: TimelineCli) -> Result<()> {
     match args.command {
-        TimelineCommand::FromMedia(a) => from_media(&a.file, &a.out),
+        TimelineCommand::FromMedia(a) => from_media(&a),
     }
 }
 
-/// `timeline from-media`: probe `file` with ffprobe and write a
-/// single-clip timeline to `out`.
-fn from_media(file: &Path, out: &Path) -> Result<()> {
+fn from_media(args: &FromMediaArgs) -> Result<()> {
+    let file = &args.file;
     if !file.exists() {
         return Err(anyhow!("media file does not exist: {}", file.display()));
     }
 
+    let fallback_fps = parse_fps_arg(&args.fps).map_err(|e| anyhow!("{e}"))?;
     let probe = probe_with_ffprobe(file)?;
+    let built = build_from_probe(&probe, file, args, fallback_fps)?;
 
-    let fps = probe
-        .fps()
-        .ok_or_else(|| anyhow!("ffprobe did not report a frame rate for {}", file.display()))?;
-    let (width, height) = probe.dimensions().ok_or_else(|| {
-        anyhow!(
-            "ffprobe did not report video dimensions for {}",
-            file.display()
-        )
-    })?;
-    let duration_s = probe
-        .duration_seconds()
-        .ok_or_else(|| anyhow!("ffprobe did not report a duration for {}", file.display()))?;
+    built
+        .timeline
+        .validate()
+        .map_err(|e| anyhow!("generated timeline failed validation: {e}"))?;
 
-    let duration_frames = (duration_s * fps.as_f64()).round() as i64;
-    if duration_frames <= 0 {
-        return Err(anyhow!(
-            "ffprobe reported a non-positive duration ({duration_s:.3} s) for {}",
-            file.display()
-        ));
+    let json = built
+        .timeline
+        .to_json_string_pretty()
+        .map_err(|e| anyhow!("serialising timeline: {e}"))?;
+    std::fs::write(&args.out, json).with_context(|| format!("writing {}", args.out.display()))?;
+
+    // Report the audio shape so the user can see what the XML will declare.
+    if probe.has_audio() {
+        let props = probe_audio_properties(file);
+        println!(
+            "Audio source: {} channel(s), {} Hz, {}-bit",
+            props.channels, props.sample_rate, props.bit_depth
+        );
     }
 
-    let source = file
-        .canonicalize()
+    if built.audio_only {
+        println!(
+            "Note: {} is audio-only. Built an audio-only timeline at {} fps; \
+             raster size ({}x{}) is a placeholder.",
+            file.display(),
+            format_fps_pretty(built.timeline.fps),
+            built.timeline.width,
+            built.timeline.height,
+        );
+    } else {
+        let has_audio = built
+            .timeline
+            .tracks
+            .iter()
+            .any(|t| t.kind == TrackKind::Audio);
+        println!(
+            "Wrote {} ({} frames at {} fps, {}x{}, audio: {})",
+            args.out.display(),
+            built.duration_frames,
+            format_fps_pretty(built.timeline.fps),
+            built.timeline.width,
+            built.timeline.height,
+            if has_audio { "yes" } else { "no" }
+        );
+    }
+    Ok(())
+}
+
+#[derive(Debug)]
+struct Built {
+    timeline: Timeline,
+    audio_only: bool,
+    duration_frames: i64,
+}
+
+fn build_from_probe(
+    probe: &Probe,
+    file: &Path,
+    args: &FromMediaArgs,
+    fallback_fps: Fps,
+) -> Result<Built> {
+    let duration_s = probe.duration_seconds().ok_or_else(|| {
+        anyhow!(
+            "ffprobe did not report a duration for {}\nStreams seen:\n{}",
+            file.display(),
+            probe.describe()
+        )
+    })?;
+
+    let source = dunce::canonicalize(file)
         .with_context(|| format!("resolving {}", file.display()))?
         .to_string_lossy()
         .into_owned();
 
     let has_audio = probe.has_audio();
 
-    let mut tracks = Vec::with_capacity(2);
-    tracks.push(Track {
-        kind: TrackKind::Video,
-        index: 1,
-        clips: vec![Clip {
-            id: "video-1".to_string(),
-            source: source.clone(),
-            source_in: 0,
-            source_out: duration_frames,
-            start: 0,
-            speed: 1.0,
-            has_audio,
-            muted: false,
-        }],
-    });
-    if has_audio {
-        tracks.push(Track {
-            kind: TrackKind::Audio,
-            index: 1,
-            clips: vec![Clip {
-                id: "audio-1".to_string(),
-                source,
-                source_in: 0,
-                source_out: duration_frames,
-                start: 0,
-                speed: 1.0,
-                has_audio: true,
-                muted: false,
-            }],
-        });
+    match probe.first_video() {
+        Some(video) => {
+            let fps = video.frame_rate().ok_or_else(|| {
+                anyhow!(
+                    "video stream {} has no usable frame rate \
+                     (avg_frame_rate = {:?}, r_frame_rate = {:?}).\n\
+                     Pass --fps <rate> to override, e.g. --fps 30000/1001.\n\
+                     Streams seen:\n{}",
+                    video.label(),
+                    video.avg_frame_rate.as_deref().unwrap_or("missing"),
+                    video.r_frame_rate.as_deref().unwrap_or("missing"),
+                    probe.describe()
+                )
+            })?;
+
+            let (width, height) = video
+                .width
+                .zip(video.height)
+                .filter(|(w, h)| *w > 0 && *h > 0)
+                .ok_or_else(|| {
+                    anyhow!(
+                        "video stream {} has no usable dimensions \
+                         (width = {:?}, height = {:?}).\n\
+                         Pass --width and --height to override.\n\
+                         Streams seen:\n{}",
+                        video.label(),
+                        video.width,
+                        video.height,
+                        probe.describe()
+                    )
+                })?;
+
+            let duration_frames = frames_for(duration_s, fps, &file.display().to_string())?;
+
+            let mut tracks = Vec::with_capacity(2);
+            tracks.push(Track {
+                kind: TrackKind::Video,
+                index: 1,
+                clips: vec![Clip {
+                    id: "video-1".to_string(),
+                    source: source.clone(),
+                    source_in: 0,
+                    source_out: duration_frames,
+                    start: 0,
+                    speed: 1.0,
+                    has_audio,
+                    muted: false,
+                }],
+            });
+            if has_audio {
+                tracks.push(Track {
+                    kind: TrackKind::Audio,
+                    index: 1,
+                    clips: vec![Clip {
+                        id: "audio-1".to_string(),
+                        source,
+                        source_in: 0,
+                        source_out: duration_frames,
+                        start: 0,
+                        speed: 1.0,
+                        has_audio: true,
+                        muted: false,
+                    }],
+                });
+            }
+
+            Ok(Built {
+                timeline: Timeline {
+                    fps,
+                    width,
+                    height,
+                    tracks,
+                },
+                audio_only: false,
+                duration_frames,
+            })
+        }
+        None => {
+            if !has_audio {
+                return Err(anyhow!(
+                    "{} has no video stream and no audio stream; nothing to \
+                     build a timeline from.\nStreams seen:\n{}",
+                    file.display(),
+                    probe.describe()
+                ));
+            }
+            let fps = fallback_fps;
+            let duration_frames = frames_for(duration_s, fps, &file.display().to_string())?;
+
+            Ok(Built {
+                timeline: Timeline {
+                    fps,
+                    width: args.width,
+                    height: args.height,
+                    tracks: vec![Track {
+                        kind: TrackKind::Audio,
+                        index: 1,
+                        clips: vec![Clip {
+                            id: "audio-1".to_string(),
+                            source,
+                            source_in: 0,
+                            source_out: duration_frames,
+                            start: 0,
+                            speed: 1.0,
+                            has_audio: true,
+                            muted: false,
+                        }],
+                    }],
+                },
+                audio_only: true,
+                duration_frames,
+            })
+        }
     }
-
-    let timeline = Timeline {
-        fps,
-        width,
-        height,
-        tracks,
-    };
-    timeline
-        .validate()
-        .map_err(|e| anyhow!("generated timeline failed validation: {e}"))?;
-
-    let json = timeline
-        .to_json_string_pretty()
-        .map_err(|e| anyhow!("serialising timeline: {e}"))?;
-    std::fs::write(out, json).with_context(|| format!("writing {}", out.display()))?;
-
-    println!(
-        "Wrote {} ({} frames at {} fps, {}x{}, audio: {})",
-        out.display(),
-        duration_frames,
-        format_fps(fps),
-        width,
-        height,
-        if has_audio { "yes" } else { "no" }
-    );
-    Ok(())
 }
 
-fn format_fps(fps: Fps) -> String {
+fn frames_for(duration_s: f64, fps: Fps, label: &str) -> Result<i64> {
+    let frames = (duration_s * fps.as_f64()).round() as i64;
+    if frames <= 0 {
+        return Err(anyhow!(
+            "computed timeline duration for {label} is {frames} frames, which \
+             is not positive; the probe reported {duration_s:.3} s at {} fps",
+            format_fps_pretty(fps)
+        ));
+    }
+    Ok(frames)
+}
+
+fn format_fps_pretty(fps: Fps) -> String {
     if fps.den == 1 {
         fps.num.to_string()
     } else {
-        format!("{}/{}", fps.num, fps.den)
+        format!("{:.3} ({}/{})", fps.as_f64(), fps.num, fps.den)
     }
 }
 
-/// A minimal view of ffprobe's JSON output.
+/// Parses the `--fps` flag.
+pub fn parse_fps_arg(s: &str) -> Result<Fps, String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err("--fps must not be empty".to_string());
+    }
+
+    if let Some((num_s, den_s)) = s.split_once('/') {
+        let num = num_s.trim().parse::<u32>().map_err(|_| {
+            format!(
+                "--fps fraction numerator `{}` is not a positive integer",
+                num_s.trim()
+            )
+        })?;
+        let den = den_s.trim().parse::<u32>().map_err(|_| {
+            format!(
+                "--fps fraction denominator `{}` is not a positive integer",
+                den_s.trim()
+            )
+        })?;
+        return Fps::new(num, den)
+            .map_err(|_| format!("--fps fraction {num}/{den} is invalid (both parts must be > 0)"));
+    }
+
+    match s {
+        "23.976" | "23.98" => return Fps::new(24000, 1001).map_err(|e| e.to_string()),
+        "29.97" => return Fps::new(30000, 1001).map_err(|e| e.to_string()),
+        "59.94" => return Fps::new(60000, 1001).map_err(|e| e.to_string()),
+        _ => {}
+    }
+
+    if let Ok(n) = s.parse::<u32>() {
+        if n == 0 {
+            return Err("--fps must be > 0".to_string());
+        }
+        return Fps::new(n, 1).map_err(|e| e.to_string());
+    }
+
+    Err(format!(
+        "--fps `{s}` is not a recognised frame rate. \
+         Try an integer (24, 25, 30, 50, 60), an NTSC value \
+         (23.976, 29.97, 59.94), or a fraction such as 30000/1001"
+    ))
+}
+
 #[derive(Debug, Deserialize)]
 struct Probe {
+    #[serde(default)]
     streams: Vec<Stream>,
     #[serde(default)]
     format: Format,
@@ -131,7 +415,12 @@ struct Probe {
 
 #[derive(Debug, Deserialize)]
 struct Stream {
-    codec_type: String,
+    #[serde(default)]
+    index: Option<u32>,
+    #[serde(default)]
+    codec_type: Option<String>,
+    #[serde(default)]
+    codec_name: Option<String>,
     #[serde(default)]
     width: Option<u32>,
     #[serde(default)]
@@ -140,6 +429,16 @@ struct Stream {
     r_frame_rate: Option<String>,
     #[serde(default)]
     avg_frame_rate: Option<String>,
+    #[serde(default)]
+    duration: Option<String>,
+    #[serde(default)]
+    disposition: Disposition,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct Disposition {
+    #[serde(default)]
+    attached_pic: u8,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -150,41 +449,78 @@ struct Format {
 
 impl Probe {
     fn has_audio(&self) -> bool {
-        self.streams.iter().any(|s| s.codec_type == "audio")
-    }
-
-    fn dimensions(&self) -> Option<(u32, u32)> {
         self.streams
             .iter()
-            .find(|s| s.codec_type == "video")
-            .and_then(|s| s.width.zip(s.height))
-            .filter(|(w, h)| *w > 0 && *h > 0)
+            .any(|s| s.codec_type.as_deref() == Some("audio"))
     }
 
-    fn fps(&self) -> Option<Fps> {
-        let stream = self.streams.iter().find(|s| s.codec_type == "video")?;
-        let candidate = stream
-            .r_frame_rate
-            .as_deref()
-            .filter(|s| !s.is_empty() && *s != "0/0")
-            .or_else(|| stream.avg_frame_rate.as_deref());
-        let rational = candidate?;
-        parse_rational(rational)
+    fn first_video(&self) -> Option<&Stream> {
+        self.streams.iter().find(|s| s.is_real_video())
     }
 
     fn duration_seconds(&self) -> Option<f64> {
-        self.format
-            .duration
-            .as_deref()?
-            .trim()
-            .parse::<f64>()
-            .ok()
-            .filter(|d| d.is_finite() && *d > 0.0)
+        if let Some(d) = self.format.duration.as_deref().and_then(parse_duration) {
+            return Some(d);
+        }
+        self.streams
+            .iter()
+            .filter_map(|s| s.duration.as_deref().and_then(parse_duration))
+            .reduce(f64::max)
+    }
+
+    fn describe(&self) -> String {
+        if self.streams.is_empty() {
+            return "  (ffprobe reported no streams)".to_string();
+        }
+        self.streams
+            .iter()
+            .map(Stream::describe)
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }
 
-/// Parses an `"N/D"` frame-rate string into a validated [`Fps`].
-fn parse_rational(s: &str) -> Option<Fps> {
+impl Stream {
+    fn is_real_video(&self) -> bool {
+        self.codec_type.as_deref() == Some("video") && self.disposition.attached_pic == 0
+    }
+
+    fn frame_rate(&self) -> Option<Fps> {
+        parse_rational_rate(self.avg_frame_rate.as_deref())
+            .or_else(|| parse_rational_rate(self.r_frame_rate.as_deref()))
+    }
+
+    fn label(&self) -> String {
+        match self.index {
+            Some(i) => format!("#{i}"),
+            None => "#?".to_string(),
+        }
+    }
+
+    fn describe(&self) -> String {
+        let kind = self.codec_type.as_deref().unwrap_or("unknown");
+        let codec = self.codec_name.as_deref().unwrap_or("?");
+        let mut line = format!("  {}: {kind}/{codec}", self.label());
+        if self.is_real_video() {
+            let w = self.width.unwrap_or(0);
+            let h = self.height.unwrap_or(0);
+            let fps = self
+                .frame_rate()
+                .map(format_fps_pretty)
+                .unwrap_or_else(|| "fps=?".to_string());
+            line.push_str(&format!(" ({w}x{h}, {fps})"));
+        } else if self.disposition.attached_pic != 0 {
+            line.push_str(" (attached picture)");
+        }
+        line
+    }
+}
+
+fn parse_rational_rate(s: Option<&str>) -> Option<Fps> {
+    let s = s?.trim();
+    if s.is_empty() {
+        return None;
+    }
     let (num_s, den_s) = s.split_once('/')?;
     let num: u32 = num_s.trim().parse().ok()?;
     let den: u32 = den_s.trim().parse().ok()?;
@@ -194,7 +530,13 @@ fn parse_rational(s: &str) -> Option<Fps> {
     Fps::new(num, den).ok()
 }
 
-/// Runs `ffprobe` and parses its JSON output.
+fn parse_duration(s: &str) -> Option<f64> {
+    s.trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|d| d.is_finite() && *d > 0.0)
+}
+
 fn probe_with_ffprobe(file: &Path) -> Result<Probe> {
     let output = Command::new("ffprobe")
         .args([
@@ -210,8 +552,9 @@ fn probe_with_ffprobe(file: &Path) -> Result<Probe> {
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
                 anyhow!(
-                    "ffprobe was not found on PATH. Install ffmpeg (which includes \
-                     ffprobe) and ensure it is on PATH, or write timeline.json by hand."
+                    "ffprobe was not found on PATH. Install ffmpeg (which \
+                     includes ffprobe) and ensure it is on PATH, or write \
+                     timeline.json by hand."
                 )
             } else {
                 anyhow!("failed to run ffprobe: {e}")
@@ -236,83 +579,144 @@ fn probe_with_ffprobe(file: &Path) -> Result<Probe> {
 mod tests {
     use super::*;
 
+    fn args_with(fps: &str, width: u32, height: u32) -> FromMediaArgs {
+        FromMediaArgs {
+            file: "media.mp4".into(),
+            out: "tl.json".into(),
+            fps: fps.to_string(),
+            width,
+            height,
+        }
+    }
+
     #[test]
-    fn parse_rational_accepts_common_rates() {
-        assert_eq!(parse_rational("30/1"), Some(Fps { num: 30, den: 1 }));
+    fn parse_fps_arg_integer() {
+        assert_eq!(parse_fps_arg("30").unwrap(), Fps { num: 30, den: 1 });
+    }
+
+    #[test]
+    fn parse_fps_arg_ntsc_decimals() {
         assert_eq!(
-            parse_rational("30000/1001"),
-            Some(Fps {
+            parse_fps_arg("29.97").unwrap(),
+            Fps {
                 num: 30_000,
                 den: 1001
-            })
+            }
         );
-        assert_eq!(parse_rational("25/1"), Some(Fps { num: 25, den: 1 }));
     }
 
     #[test]
-    fn parse_rational_rejects_garbage() {
-        assert_eq!(parse_rational(""), None);
-        assert_eq!(parse_rational("30"), None);
-        assert_eq!(parse_rational("0/0"), None);
-        assert_eq!(parse_rational("30/0"), None);
-        assert_eq!(parse_rational("abc/def"), None);
+    fn parse_fps_arg_fraction() {
+        assert_eq!(
+            parse_fps_arg("30000/1001").unwrap(),
+            Fps {
+                num: 30_000,
+                den: 1001
+            }
+        );
     }
 
     #[test]
-    fn probe_detects_video_stream() {
-        let json = r#"{
+    fn parse_fps_arg_rejects_garbage() {
+        assert!(parse_fps_arg("").is_err());
+        assert!(parse_fps_arg("0").is_err());
+        assert!(parse_fps_arg("abc").is_err());
+    }
+
+    fn json_audio_only() -> &'static str {
+        r#"{
             "streams": [
-                {"codec_type": "video", "width": 1920, "height": 1080, "r_frame_rate": "30000/1001"},
-                {"codec_type": "audio"}
+                {"index": 0, "codec_type": "audio", "codec_name": "aac"}
+            ],
+            "format": {"duration": "12.5"}
+        }"#
+    }
+
+    fn json_video_plus_audio() -> &'static str {
+        r#"{
+            "streams": [
+                {"index": 0, "codec_type": "video", "codec_name": "h264",
+                 "width": 1920, "height": 1080,
+                 "avg_frame_rate": "30000/1001", "r_frame_rate": "30000/1001",
+                 "disposition": {"attached_pic": 0}},
+                {"index": 1, "codec_type": "audio", "codec_name": "aac"}
             ],
             "format": {"duration": "10.5"}
-        }"#;
-        let probe: Probe = serde_json::from_str(json).unwrap();
-        assert!(probe.has_audio());
-        assert_eq!(probe.dimensions(), Some((1920, 1080)));
-        assert_eq!(
-            probe.fps(),
-            Some(Fps {
-                num: 30_000,
-                den: 1001
-            })
-        );
-        assert!((probe.duration_seconds().unwrap() - 10.5).abs() < 1e-9);
+        }"#
+    }
+
+    fn json_cover_art() -> &'static str {
+        r#"{
+            "streams": [
+                {"index": 0, "codec_type": "audio", "codec_name": "mp3"},
+                {"index": 1, "codec_type": "video", "codec_name": "mjpeg",
+                 "width": 600, "height": 600,
+                 "avg_frame_rate": "90000/1", "r_frame_rate": "90000/1",
+                 "disposition": {"attached_pic": 1}}
+            ],
+            "format": {"duration": "180.0"}
+        }"#
+    }
+
+    fn parse(json: &str) -> Probe {
+        serde_json::from_str(json).expect("parse probe json")
     }
 
     #[test]
-    fn probe_handles_audio_only() {
-        let json = r#"{
-            "streams": [{"codec_type": "audio"}],
-            "format": {"duration": "3.0"}
-        }"#;
-        let probe: Probe = serde_json::from_str(json).unwrap();
-        assert!(probe.has_audio());
-        assert_eq!(probe.dimensions(), None);
-        assert_eq!(probe.fps(), None);
+    fn probe_audio_only() {
+        let p = parse(json_audio_only());
+        assert!(p.has_audio());
+        assert!(p.first_video().is_none());
     }
 
     #[test]
-    fn probe_falls_back_to_avg_frame_rate() {
+    fn probe_ignores_attached_picture() {
+        let p = parse(json_cover_art());
+        assert!(p.first_video().is_none());
+    }
+
+    #[test]
+    fn build_audio_only_uses_fallback_fps() {
+        let probe = parse(json_audio_only());
+        let args = args_with("30000/1001", 1920, 1080);
+        let fps = parse_fps_arg(&args.fps).unwrap();
+        let built = build_from_probe(&probe, Path::new("media.mp4"), &args, fps).unwrap();
+        assert!(built.audio_only);
+        assert_eq!(built.timeline.tracks.len(), 1);
+        assert_eq!(built.duration_frames, 375);
+    }
+
+    #[test]
+    fn build_video_plus_audio() {
+        let probe = parse(json_video_plus_audio());
+        let args = args_with("30000/1001", 1920, 1080);
+        let fps = parse_fps_arg(&args.fps).unwrap();
+        let built = build_from_probe(&probe, Path::new("media.mp4"), &args, fps).unwrap();
+        assert!(!built.audio_only);
+        assert_eq!(built.timeline.tracks.len(), 2);
+    }
+
+    #[test]
+    fn audio_properties_default_is_mono_48k_16() {
+        let d = AudioProperties::default();
+        assert_eq!(d.channels, 1);
+        assert_eq!(d.sample_rate, 48_000);
+        assert_eq!(d.bit_depth, 16);
+    }
+
+    #[test]
+    fn audio_probe_parses_stereo_aac() {
+        // Reproduces the user's source: stereo, 22050 Hz, AAC reports 0
+        // bits_per_sample.
         let json = r#"{
             "streams": [
-                {"codec_type": "video", "width": 640, "height": 480, "avg_frame_rate": "25/1"}
-            ],
-            "format": {"duration": "2.0"}
+                {"channels": 2, "sample_rate": "22050", "bits_per_sample": 0}
+            ]
         }"#;
-        let probe: Probe = serde_json::from_str(json).unwrap();
-        assert_eq!(probe.fps(), Some(Fps { num: 25, den: 1 }));
-    }
-
-    #[test]
-    fn probe_treats_zero_over_zero_as_missing() {
-        let json = r#"{
-            "streams": [
-                {"codec_type": "video", "width": 640, "height": 480, "r_frame_rate": "0/0"}
-            ],
-            "format": {"duration": "2.0"}
-        }"#;
-        let probe: Probe = serde_json::from_str(json).unwrap();
-        assert_eq!(probe.fps(), None);
+        let probe: AudioProbe = serde_json::from_str(json).unwrap();
+        let stream = probe.streams.into_iter().next().unwrap();
+        assert_eq!(stream.channels, Some(2));
+        assert_eq!(stream.sample_rate.as_deref(), Some("22050"));
+        assert_eq!(stream.bits_per_sample, Some(0));
     }
 }

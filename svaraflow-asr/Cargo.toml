@@ -9,26 +9,31 @@ license.workspace = true
 repository.workspace = true
 
 [features]
-# `vad` pulls in ONNX Runtime through `ort`. Disable with
-# `--no-default-features` on machines that only need the non-VAD parts of
-# the crate.
-default = ["vad"]
+# `vad` pulls in ONNX Runtime through `ort`, for the Silero VAD used to
+# chunk audio before transcription. Default on.
 vad = ["dep:ort"]
+# `cuda` builds whisper.cpp with CUDA and turns on the GPU code path at
+# runtime. Off by default so the crate builds CPU-only on any machine.
+cuda = ["whisper-rs/cuda"]
+default = ["vad"]
 
 [dependencies]
 svaraflow-core.workspace = true
 thiserror = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
-# ONNX Runtime bindings for Silero VAD.
-#
-# `default-features = false` drops `download-binaries` and `tls-native`.
-# The download path in `ort-sys` 2.0.0-rc.12+ requires a TLS backend and
-# calls a `ureq` 3.x API surface that the resolved `ureq` does not expose;
-# system linking avoids both problems and makes offline builds possible.
-#
-# Set `ORT_LIB_PATH` to the directory containing `onnxruntime.dll` (Windows)
-# or `libonnxruntime.so` (Linux), or install ONNX Runtime system-wide and
-# let `pkg-config` find it. See docs/DECISIONS.md (ADR-0018).
+# whisper.cpp bindings. `default-features = false` keeps GPU backends off
+# unless the `cuda` feature above is enabled.
+whisper-rs = { version = "0.16", default-features = false }
+
+# Model downloader: HTTP with resume, plus SHA-256 verification.
+ureq = { version = "3", default-features = false, features = ["tls-rustls"] }
+sha2 = "0.10"
+hex = "0.4"
+
+# Silero VAD through ONNX Runtime, from the earlier workstream. Optional
+# behind `vad`.
 ort = { version = "2.0.0-rc.9", default-features = false, features = [
     "ndarray",
     "std",

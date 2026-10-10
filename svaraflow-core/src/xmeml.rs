@@ -1,36 +1,46 @@
 //! FCP7 XML (`xmeml` version 4) export.
 //!
 //! Writes a new sequence named `"{original} - SvaraFlow cut"` that references
-//! the original media by file URL. The original timeline is never touched:
-//! this module only reads a [`Timeline`] and writes XML.
+//! the original media by file URL. The original timeline is never touched.
 //!
-//! # Frame semantics
+//! # Structure
 //!
-//! Inside a `<clipitem>`:
+//! The output follows the FCP7 DTD (Apple, *Final Cut Pro 7 XML Interchange
+//! Format*). The root is `<xmeml version="4">` with a bare
+//! `<!DOCTYPE xmeml>`. The sequence carries a `<uuid>`, `<name>`,
+//! `<duration>`, `<rate>`, `<timecode>` and `<media>`. `<media>` always
+//! contains a `<video>` block — with an empty `<track/>` when there are no
+//! video clips — and an `<audio>` block with `<numOutputChannels>`, a
+//! `<format><samplecharacteristics>` and one `<track>` per audio channel.
 //!
-//! - `<start>` / `<end>` are **destination** frames: where the clip sits on
-//!   the new sequence's timeline, half-open (`end` exclusive).
-//! - `<in>` / `<out>` are the **source** frames the clipitem consumes, in
-//!   the source file's timebase. Because SvaraFlow does not retime during a
-//!   cut, these are the same as the original `Clip::source_in` /
-//!   `Clip::source_out`.
-//! - `<duration>` is the source duration, `out - in`.
+//! # File definitions and references
 //!
-//! The nested `<file>` block repeats `<in>` / `<out>` for the file's own
-//! range. See ADR-0015 for the DTD reading this is based on.
+//! Each distinct source path gets **one** `<file>` element. The first
+//! clipitem that uses a source carries the full definition (name, pathurl,
+//! rate, total source duration, timecode, media). Every later clipitem that
+//! uses the same source carries `<file id="file-N"/>`, a reference. This
+//! keeps `<file><duration>` equal to the *total* source duration rather
+//! than a segment length, so `out <= duration` holds for every clipitem.
 //!
-//! # File URLs
+//! # Profiles
 //!
-//! `<pathurl>` is written as `file://localhost/C%3a/media/file.mov`: drive
-//! letter percent-encoded **with lowercase hex**, backslashes replaced by
-//! `/`, spaces as `%20`. The spec (section G) writes `C%3a`; FCP7, Resolve
-//! and Premiere all accept either case.
+//! [`XmlProfile`] controls how much is written:
 //!
-//! # Linked clips
+//! | Profile | Clips | Sequence metadata | Video block | Links |
+//! | --- | --- | --- | --- | --- |
+//! | `Minimal` | first only | name, duration, rate | omitted | no |
+//! | `Cuts` | all | name, duration, rate | omitted | yes |
+//! | `Full` | all | uuid, timecode, name, duration, rate | yes (possibly empty) | yes |
 //!
-//! Every `clipitem` carries one `<link>` block per member of its link group,
-//! including itself. A link group is the set of clips that share the same
-//! `(source, start)` **and** includes at least one video and one audio clip.
+//! `Full` is the default and the one that imports into both Resolve and
+//! Premiere. `Minimal` and `Cuts` exist for debugging and for hosts that
+//! choke on the empty video block.
+//!
+//! # Paths
+//!
+//! [`encode_path_url`] strips the Windows `\\?\` verbatim prefix and
+//! percent-encodes with **lowercase** hex, producing
+//! `file://localhost/C%3a/Users/...`. Spaces become `%20`.
 
 use std::collections::HashMap;
 
@@ -38,7 +48,7 @@ use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::Writer;
 
 use crate::error::CoreError;
-use crate::timeline::{Clip, Timeline, Track, TrackKind};
+use crate::timeline::{Fps, Timeline, Track, TrackKind};
 
 /// Version attribute written into the root `<xmeml>` element.
 pub const XMEML_VERSION: u32 = 4;
@@ -46,67 +56,131 @@ pub const XMEML_VERSION: u32 = 4;
 /// Name suffix appended to the original sequence name.
 pub const SEQUENCE_SUFFIX: &str = " - SvaraFlow cut";
 
+/// How much of the timeline to write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum XmlProfile {
+    /// One audio clipitem covering the first clip. Smallest importable file.
+    Minimal,
+    /// Every cut clipitem, with links, but no sequence timecode or video
+    /// block.
+    Cuts,
+    /// Full FCP7 structure: uuid, timecode, empty video block, audio
+    /// format, per-track outputchannelindex, links. The default, and the
+    /// one that imports into Resolve and Premiere.
+    #[default]
+    Full,
+}
+
+/// Per-source metadata the writer needs but the timeline does not carry.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SourceInfo {
+    /// Total source duration in frames at the timeline's fps.
+    pub total_frames: i64,
+    /// Audio channel count. `1` for mono, `2` for stereo.
+    pub audio_channels: u32,
+    /// Audio sample rate in Hz.
+    pub audio_sample_rate: u32,
+    /// Audio bit depth.
+    pub audio_bit_depth: u32,
+    /// True when the source carries a video stream.
+    pub has_video: bool,
+    /// Video frame width in pixels.
+    pub video_width: u32,
+    /// Video frame height in pixels.
+    pub video_height: u32,
+}
+
+impl Default for SourceInfo {
+    fn default() -> Self {
+        Self {
+            total_frames: 0,
+            audio_channels: 1,
+            audio_sample_rate: 48_000,
+            audio_bit_depth: 16,
+            has_video: false,
+            video_width: 1920,
+            video_height: 1080,
+        }
+    }
+}
+
+impl SourceInfo {
+    /// Builds a best-effort map from a timeline.
+    #[must_use]
+    pub fn from_timeline(timeline: &Timeline) -> HashMap<String, SourceInfo> {
+        let mut map: HashMap<String, SourceInfo> = HashMap::new();
+        for track in &timeline.tracks {
+            for clip in &track.clips {
+                let entry = map
+                    .entry(clip.source.clone())
+                    .or_insert_with(|| SourceInfo {
+                        total_frames: 0,
+                        audio_channels: if track.kind == TrackKind::Audio { 1 } else { 0 },
+                        audio_sample_rate: 48_000,
+                        audio_bit_depth: 16,
+                        has_video: track.kind == TrackKind::Video,
+                        video_width: timeline.width,
+                        video_height: timeline.height,
+                    });
+                entry.total_frames = entry.total_frames.max(clip.source_out);
+                if track.kind == TrackKind::Video {
+                    entry.has_video = true;
+                }
+            }
+        }
+        map
+    }
+}
+
 /// Writes `timeline` as FCP7 XML.
 ///
-/// `original_name` is the sequence name the user sees in their host. The
-/// output sequence is named `"{original_name}{SEQUENCE_SUFFIX}"`.
+/// `original_name` is the sequence name the user sees in their host.
+/// `sources` maps each `clip.source` string to its [`SourceInfo`]. Missing
+/// entries fall back to [`SourceInfo::default`], with `total_frames`
+/// clamped up to the clip's `source_out` so `out <= duration` still holds.
 ///
 /// # Errors
 ///
-/// [`CoreError::Io`] for any write failure, [`CoreError::InvalidTimeline`]
-/// if `timeline` has no tracks.
-pub fn write_xmeml(timeline: &Timeline, original_name: &str) -> Result<String, CoreError> {
-    if timeline.tracks.is_empty() {
+/// - [`CoreError::InvalidTimeline`] when the timeline has no clips.
+/// - [`CoreError::Io`] for any write failure.
+pub fn write_xmeml(
+    timeline: &Timeline,
+    original_name: &str,
+    profile: XmlProfile,
+    sources: &HashMap<String, SourceInfo>,
+) -> Result<String, CoreError> {
+    let clip_count: usize = timeline.tracks.iter().map(|t| t.clips.len()).sum();
+    if clip_count == 0 {
         return Err(CoreError::InvalidTimeline(
-            "cannot export a timeline with no tracks".into(),
+            "cannot export a timeline with no clips: every frame was \
+             classified as silence. Try a lower noise level (--noise auto \
+             or --noise -50) or a smaller --keep-talks-ms."
+                .into(),
         ));
     }
-
-    let link_index = LinkIndex::build(timeline);
 
     let mut writer = Writer::new_with_indent(Vec::new(), b' ', 2);
 
     writer
         .write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None)))
         .map_err(io_err)?;
+    // Bare DOCTYPE. No SYSTEM identifier: the DTD is not on disk and hosts
+    // do not fetch it. A SYSTEM reference to a missing file is what caused
+    // Premiere's "EMPTY" import failure.
     writer
-        .write_event(Event::DocType(BytesText::from_escaped(
-            "xmeml SYSTEM \"fcpxmlv4.dtd\"",
-        )))
+        .write_event(Event::DocType(BytesText::from_escaped("xmeml")))
         .map_err(io_err)?;
 
     let mut root = BytesStart::new("xmeml");
     root.push_attribute(("version", XMEML_VERSION.to_string().as_str()));
     writer.write_event(Event::Start(root)).map_err(io_err)?;
 
-    writer
-        .write_event(Event::Start(BytesStart::new("sequence")))
-        .map_err(io_err)?;
+    match profile {
+        XmlProfile::Minimal => write_sequence_minimal(&mut writer, timeline, original_name, sources)?,
+        XmlProfile::Cuts => write_sequence_cuts(&mut writer, timeline, original_name, sources)?,
+        XmlProfile::Full => write_sequence_full(&mut writer, timeline, original_name, sources)?,
+    }
 
-    write_element(
-        &mut writer,
-        "name",
-        &format!("{original_name}{SEQUENCE_SUFFIX}"),
-    )?;
-    write_element(
-        &mut writer,
-        "duration",
-        &timeline.duration_frames().to_string(),
-    )?;
-    write_rate(&mut writer, timeline)?;
-    write_element(&mut writer, "in", "-1")?;
-    write_element(&mut writer, "out", "-1")?;
-
-    writer
-        .write_event(Event::Start(BytesStart::new("media")))
-        .map_err(io_err)?;
-    write_tracks(&mut writer, timeline, &link_index)?;
-    writer
-        .write_event(Event::End(BytesEnd::new("media")))
-        .map_err(io_err)?;
-    writer
-        .write_event(Event::End(BytesEnd::new("sequence")))
-        .map_err(io_err)?;
     writer
         .write_event(Event::End(BytesEnd::new("xmeml")))
         .map_err(io_err)?;
@@ -119,78 +193,447 @@ pub fn write_xmeml(timeline: &Timeline, original_name: &str) -> Result<String, C
     })
 }
 
-/// Writes `<video>` and `<audio>` blocks with their tracks.
-fn write_tracks(
+// ---------------------------------------------------------------------------
+// Sequences
+// ---------------------------------------------------------------------------
+
+fn write_sequence_full(
     writer: &mut Writer<Vec<u8>>,
     timeline: &Timeline,
-    link_index: &LinkIndex,
+    original_name: &str,
+    sources: &HashMap<String, SourceInfo>,
 ) -> Result<(), CoreError> {
-    for kind in [TrackKind::Video, TrackKind::Audio] {
-        let element = match kind {
-            TrackKind::Video => "video",
-            TrackKind::Audio => "audio",
-        };
-        let matching: Vec<&Track> = timeline.tracks.iter().filter(|t| t.kind == kind).collect();
-        if matching.is_empty() {
-            continue;
-        }
+    let mut seq = BytesStart::new("sequence");
+    seq.push_attribute(("id", "sequence-1"));
+    writer.write_event(Event::Start(seq)).map_err(io_err)?;
 
-        writer
-            .write_event(Event::Start(BytesStart::new(element)))
-            .map_err(io_err)?;
+    write_element(writer, "uuid", &make_uuid(original_name))?;
+    write_element(writer, "name", &format!("{original_name}{SEQUENCE_SUFFIX}"))?;
+    write_element(
+        writer,
+        "duration",
+        &timeline.duration_frames().to_string(),
+    )?;
+    write_rate(writer, timeline.fps)?;
+    write_timecode(writer, timeline.fps)?;
 
-        for track in matching {
+    let clips = build_xml_clips(timeline, sources);
+    let file_ids = assign_file_ids(&clips);
+    write_media_full(writer, timeline, &clips, &file_ids, sources)?;
+
+    writer
+        .write_event(Event::End(BytesEnd::new("sequence")))
+        .map_err(io_err)?;
+    Ok(())
+}
+
+fn write_sequence_cuts(
+    writer: &mut Writer<Vec<u8>>,
+    timeline: &Timeline,
+    original_name: &str,
+    sources: &HashMap<String, SourceInfo>,
+) -> Result<(), CoreError> {
+    writer
+        .write_event(Event::Start(BytesStart::new("sequence")))
+        .map_err(io_err)?;
+
+    write_element(writer, "name", &format!("{original_name}{SEQUENCE_SUFFIX}"))?;
+    write_element(
+        writer,
+        "duration",
+        &timeline.duration_frames().to_string(),
+    )?;
+    write_rate(writer, timeline.fps)?;
+
+    let clips = build_xml_clips(timeline, sources);
+    let file_ids = assign_file_ids(&clips);
+    write_media_cuts(writer, timeline, &clips, &file_ids, sources)?;
+
+    writer
+        .write_event(Event::End(BytesEnd::new("sequence")))
+        .map_err(io_err)?;
+    Ok(())
+}
+
+fn write_sequence_minimal(
+    writer: &mut Writer<Vec<u8>>,
+    timeline: &Timeline,
+    original_name: &str,
+    sources: &HashMap<String, SourceInfo>,
+) -> Result<(), CoreError> {
+    writer
+        .write_event(Event::Start(BytesStart::new("sequence")))
+        .map_err(io_err)?;
+
+    write_element(writer, "name", &format!("{original_name}{SEQUENCE_SUFFIX}"))?;
+    write_element(
+        writer,
+        "duration",
+        &timeline.duration_frames().to_string(),
+    )?;
+    write_rate(writer, timeline.fps)?;
+
+    let all = build_xml_clips(timeline, sources);
+    let first = all.into_iter().next();
+    let clips: Vec<XmlClip> = first.into_iter().collect();
+    let file_ids = assign_file_ids(&clips);
+
+    writer
+        .write_event(Event::Start(BytesStart::new("media")))
+        .map_err(io_err)?;
+    writer
+        .write_event(Event::Start(BytesStart::new("audio")))
+        .map_err(io_err)?;
+    writer
+        .write_event(Event::Start(BytesStart::new("track")))
+        .map_err(io_err)?;
+    for (i, clip) in clips.iter().enumerate() {
+        write_clipitem(writer, clip, &file_ids, sources, timeline.fps, i == 0)?;
+    }
+    writer
+        .write_event(Event::End(BytesEnd::new("track")))
+        .map_err(io_err)?;
+    writer
+        .write_event(Event::End(BytesEnd::new("audio")))
+        .map_err(io_err)?;
+    writer
+        .write_event(Event::End(BytesEnd::new("media")))
+        .map_err(io_err)?;
+
+    writer
+        .write_event(Event::End(BytesEnd::new("sequence")))
+        .map_err(io_err)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Media blocks
+// ---------------------------------------------------------------------------
+
+fn write_media_full(
+    writer: &mut Writer<Vec<u8>>,
+    timeline: &Timeline,
+    clips: &[XmlClip],
+    file_ids: &HashMap<String, String>,
+    sources: &HashMap<String, SourceInfo>,
+) -> Result<(), CoreError> {
+    writer
+        .write_event(Event::Start(BytesStart::new("media")))
+        .map_err(io_err)?;
+
+    writer
+        .write_event(Event::Start(BytesStart::new("video")))
+        .map_err(io_err)?;
+    writer
+        .write_event(Event::Start(BytesStart::new("format")))
+        .map_err(io_err)?;
+    writer
+        .write_event(Event::Start(BytesStart::new("samplecharacteristics")))
+        .map_err(io_err)?;
+    write_element(writer, "width", &timeline.width.to_string())?;
+    write_element(writer, "height", &timeline.height.to_string())?;
+    write_element(writer, "pixelaspectratio", "square")?;
+    write_rate(writer, timeline.fps)?;
+    write_element(writer, "fielddominance", "none")?;
+    writer
+        .write_event(Event::End(BytesEnd::new("samplecharacteristics")))
+        .map_err(io_err)?;
+    writer
+        .write_event(Event::End(BytesEnd::new("format")))
+        .map_err(io_err)?;
+
+    let video_tracks: Vec<&Track> = timeline
+        .tracks
+        .iter()
+        .filter(|t| t.kind == TrackKind::Video)
+        .collect();
+    if video_tracks.is_empty() {
+        write_empty(writer, "track")?;
+    } else {
+        for track in video_tracks {
             writer
                 .write_event(Event::Start(BytesStart::new("track")))
                 .map_err(io_err)?;
-            for clip in &track.clips {
-                write_clipitem(writer, clip, kind, link_index, timeline)?;
+            for (i, clip) in track.clips.iter().enumerate() {
+                let xml_clip = XmlClip {
+                    id: format!("vclip-{}", i),
+                    name: clip.id.clone(),
+                    source: clip.source.clone(),
+                    source_in: clip.source_in,
+                    source_out: clip.source_out,
+                    start: clip.start,
+                    end: clip.end(),
+                    track_index: track.index,
+                    link_partner: None,
+                    muted: clip.muted,
+                    mediatype: TrackKind::Video,
+                };
+                write_clipitem(writer, &xml_clip, file_ids, sources, timeline.fps, i == 0)?;
             }
             writer
                 .write_event(Event::End(BytesEnd::new("track")))
                 .map_err(io_err)?;
         }
-
-        writer
-            .write_event(Event::End(BytesEnd::new(element)))
-            .map_err(io_err)?;
     }
+    writer
+        .write_event(Event::End(BytesEnd::new("video")))
+        .map_err(io_err)?;
+
+    write_audio_block(writer, timeline, clips, file_ids, sources, true)?;
+
+    writer
+        .write_event(Event::End(BytesEnd::new("media")))
+        .map_err(io_err)?;
     Ok(())
 }
 
-/// Writes one `<clipitem>`.
+fn write_media_cuts(
+    writer: &mut Writer<Vec<u8>>,
+    timeline: &Timeline,
+    clips: &[XmlClip],
+    file_ids: &HashMap<String, String>,
+    sources: &HashMap<String, SourceInfo>,
+) -> Result<(), CoreError> {
+    writer
+        .write_event(Event::Start(BytesStart::new("media")))
+        .map_err(io_err)?;
+    write_audio_block(writer, timeline, clips, file_ids, sources, false)?;
+    writer
+        .write_event(Event::End(BytesEnd::new("media")))
+        .map_err(io_err)?;
+    Ok(())
+}
+
+fn write_audio_block(
+    writer: &mut Writer<Vec<u8>>,
+    timeline: &Timeline,
+    clips: &[XmlClip],
+    file_ids: &HashMap<String, String>,
+    sources: &HashMap<String, SourceInfo>,
+    with_format: bool,
+) -> Result<(), CoreError> {
+    writer
+        .write_event(Event::Start(BytesStart::new("audio")))
+        .map_err(io_err)?;
+
+    let num_tracks = clips
+        .iter()
+        .map(|c| c.track_index)
+        .max()
+        .unwrap_or(1)
+        .max(1);
+
+    if with_format {
+        write_element(writer, "numOutputChannels", &num_tracks.to_string())?;
+        writer
+            .write_event(Event::Start(BytesStart::new("format")))
+            .map_err(io_err)?;
+        writer
+            .write_event(Event::Start(BytesStart::new("samplecharacteristics")))
+            .map_err(io_err)?;
+        write_element(writer, "depth", "16")?;
+        write_element(writer, "samplerate", "48000")?;
+        writer
+            .write_event(Event::End(BytesEnd::new("samplecharacteristics")))
+            .map_err(io_err)?;
+        writer
+            .write_event(Event::End(BytesEnd::new("format")))
+            .map_err(io_err)?;
+    }
+
+    for track_index in 1..=num_tracks {
+        writer
+            .write_event(Event::Start(BytesStart::new("track")))
+            .map_err(io_err)?;
+        if with_format {
+            write_element(writer, "outputchannelindex", &track_index.to_string())?;
+        }
+        let mut first_in_track = true;
+        for clip in clips.iter().filter(|c| c.track_index == track_index) {
+            write_clipitem(
+                writer,
+                clip,
+                file_ids,
+                sources,
+                timeline.fps,
+                first_in_track,
+            )?;
+            first_in_track = false;
+        }
+        writer
+            .write_event(Event::End(BytesEnd::new("track")))
+            .map_err(io_err)?;
+    }
+
+    writer
+        .write_event(Event::End(BytesEnd::new("audio")))
+        .map_err(io_err)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Clipitems and files
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+struct XmlClip {
+    id: String,
+    name: String,
+    source: String,
+    source_in: i64,
+    source_out: i64,
+    start: i64,
+    end: i64,
+    track_index: u32,
+    link_partner: Option<String>,
+    muted: bool,
+    mediatype: TrackKind,
+}
+
+fn build_xml_clips(timeline: &Timeline, sources: &HashMap<String, SourceInfo>) -> Vec<XmlClip> {
+    let mut out = Vec::new();
+    let mut counter = 0usize;
+    for track in &timeline.tracks {
+        if track.kind != TrackKind::Audio {
+            continue;
+        }
+        for clip in &track.clips {
+            let channels = sources
+                .get(&clip.source)
+                .map(|s| s.audio_channels)
+                .unwrap_or(1)
+                .max(1);
+            if channels >= 2 {
+                let left_id = format!("clip-{counter}");
+                let right_id = format!("clip-{}", counter + 1);
+                counter += 2;
+                out.push(XmlClip {
+                    id: left_id.clone(),
+                    name: clip.id.clone(),
+                    source: clip.source.clone(),
+                    source_in: clip.source_in,
+                    source_out: clip.source_out,
+                    start: clip.start,
+                    end: clip.end(),
+                    track_index: 1,
+                    link_partner: Some(right_id.clone()),
+                    muted: clip.muted,
+                    mediatype: TrackKind::Audio,
+                });
+                out.push(XmlClip {
+                    id: right_id,
+                    name: clip.id.clone(),
+                    source: clip.source.clone(),
+                    source_in: clip.source_in,
+                    source_out: clip.source_out,
+                    start: clip.start,
+                    end: clip.end(),
+                    track_index: 2,
+                    link_partner: Some(left_id),
+                    muted: clip.muted,
+                    mediatype: TrackKind::Audio,
+                });
+            } else {
+                let id = format!("clip-{counter}");
+                counter += 1;
+                out.push(XmlClip {
+                    id,
+                    name: clip.id.clone(),
+                    source: clip.source.clone(),
+                    source_in: clip.source_in,
+                    source_out: clip.source_out,
+                    start: clip.start,
+                    end: clip.end(),
+                    track_index: 1,
+                    link_partner: None,
+                    muted: clip.muted,
+                    mediatype: TrackKind::Audio,
+                });
+            }
+        }
+    }
+    out
+}
+
+fn assign_file_ids(clips: &[XmlClip]) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let mut next = 1usize;
+    for clip in clips {
+        map.entry(clip.source.clone()).or_insert_with(|| {
+            let id = format!("file-{next}");
+            next += 1;
+            id
+        });
+    }
+    map
+}
+
 fn write_clipitem(
     writer: &mut Writer<Vec<u8>>,
-    clip: &Clip,
-    kind: TrackKind,
-    link_index: &LinkIndex,
-    timeline: &Timeline,
+    clip: &XmlClip,
+    file_ids: &HashMap<String, String>,
+    sources: &HashMap<String, SourceInfo>,
+    fps: Fps,
+    write_full_file: bool,
 ) -> Result<(), CoreError> {
     let mut start = BytesStart::new("clipitem");
     start.push_attribute(("id", clip.id.as_str()));
     writer.write_event(Event::Start(start)).map_err(io_err)?;
 
-    write_element(writer, "name", &clip.id)?;
-    write_element(writer, "duration", &clip.source_duration().to_string())?;
-    write_rate(writer, timeline)?;
+    write_element(writer, "name", &clip.name)?;
 
-    let enabled = match kind {
-        TrackKind::Video => true,
-        TrackKind::Audio => !clip.muted,
-    };
-    write_element(writer, "enabled", if enabled { "TRUE" } else { "FALSE" })?;
+    let source_info = sources.get(&clip.source);
+    let total_frames = source_info
+        .map(|s| s.total_frames)
+        .unwrap_or(clip.source_out)
+        .max(clip.source_out);
+    write_element(writer, "duration", &total_frames.to_string())?;
 
-    write_element(writer, "start", &clip.start.to_string())?;
-    write_element(writer, "end", &clip.end().to_string())?;
+    write_rate(writer, fps)?;
+    write_element(writer, "enabled", if clip.muted { "FALSE" } else { "TRUE" })?;
     write_element(writer, "in", &clip.source_in.to_string())?;
     write_element(writer, "out", &clip.source_out.to_string())?;
+    write_element(writer, "start", &clip.start.to_string())?;
+    write_element(writer, "end", &clip.end.to_string())?;
 
-    write_file(writer, clip, timeline)?;
+    let file_id = file_ids
+        .get(&clip.source)
+        .cloned()
+        .unwrap_or_else(|| "file-1".to_string());
+    if write_full_file {
+        write_file_full(writer, &file_id, clip, sources, fps)?;
+    } else {
+        let mut file = BytesStart::new("file");
+        file.push_attribute(("id", file_id.as_str()));
+        writer.write_event(Event::Empty(file)).map_err(io_err)?;
+    }
 
-    if let Some(members) = link_index.group_of(&clip.id) {
-        for member in members {
-            write_link_block(writer, member)?;
-        }
+    writer
+        .write_event(Event::Start(BytesStart::new("sourcetrack")))
+        .map_err(io_err)?;
+    let mediatype = match clip.mediatype {
+        TrackKind::Video => "video",
+        TrackKind::Audio => "audio",
+    };
+    write_element(writer, "mediatype", mediatype)?;
+    write_element(writer, "trackindex", &clip.track_index.to_string())?;
+    writer
+        .write_event(Event::End(BytesEnd::new("sourcetrack")))
+        .map_err(io_err)?;
+
+    if let Some(partner) = &clip.link_partner {
+        let partner_track = if clip.track_index == 1 { 2 } else { 1 };
+        writer
+            .write_event(Event::Start(BytesStart::new("link")))
+            .map_err(io_err)?;
+        write_element(writer, "linkclipref", partner)?;
+        write_element(writer, "mediatype", "audio")?;
+        write_element(writer, "trackindex", &partner_track.to_string())?;
+        write_element(writer, "clipindex", "1")?;
+        write_element(writer, "groupindex", "1")?;
+        writer
+            .write_event(Event::End(BytesEnd::new("link")))
+            .map_err(io_err)?;
     }
 
     writer
@@ -199,14 +642,18 @@ fn write_clipitem(
     Ok(())
 }
 
-/// Writes the nested `<file>` block for a clip.
-fn write_file(
+fn write_file_full(
     writer: &mut Writer<Vec<u8>>,
-    clip: &Clip,
-    timeline: &Timeline,
+    file_id: &str,
+    clip: &XmlClip,
+    sources: &HashMap<String, SourceInfo>,
+    fps: Fps,
 ) -> Result<(), CoreError> {
+    let info = sources.get(&clip.source).cloned().unwrap_or_default();
+    let total_frames = info.total_frames.max(clip.source_out);
+
     let mut file = BytesStart::new("file");
-    file.push_attribute(("id", format!("file-{}", clip.id).as_str()));
+    file.push_attribute(("id", file_id));
     writer.write_event(Event::Start(file)).map_err(io_err)?;
 
     let basename = std::path::Path::new(&clip.source)
@@ -215,10 +662,47 @@ fn write_file(
         .unwrap_or(&clip.source);
     write_element(writer, "name", basename)?;
     write_element(writer, "pathurl", &encode_path_url(&clip.source))?;
-    write_rate(writer, timeline)?;
-    write_element(writer, "duration", &clip.source_duration().to_string())?;
-    write_element(writer, "in", &clip.source_in.to_string())?;
-    write_element(writer, "out", &clip.source_out.to_string())?;
+    write_rate(writer, fps)?;
+    write_element(writer, "duration", &total_frames.to_string())?;
+    write_timecode(writer, fps)?;
+
+    writer
+        .write_event(Event::Start(BytesStart::new("media")))
+        .map_err(io_err)?;
+    if info.has_video {
+        writer
+            .write_event(Event::Start(BytesStart::new("video")))
+            .map_err(io_err)?;
+        writer
+            .write_event(Event::Start(BytesStart::new("samplecharacteristics")))
+            .map_err(io_err)?;
+        write_element(writer, "width", &info.video_width.to_string())?;
+        write_element(writer, "height", &info.video_height.to_string())?;
+        writer
+            .write_event(Event::End(BytesEnd::new("samplecharacteristics")))
+            .map_err(io_err)?;
+        writer
+            .write_event(Event::End(BytesEnd::new("video")))
+            .map_err(io_err)?;
+    }
+    writer
+        .write_event(Event::Start(BytesStart::new("audio")))
+        .map_err(io_err)?;
+    writer
+        .write_event(Event::Start(BytesStart::new("samplecharacteristics")))
+        .map_err(io_err)?;
+    write_element(writer, "depth", &info.audio_bit_depth.to_string())?;
+    write_element(writer, "samplerate", &info.audio_sample_rate.to_string())?;
+    writer
+        .write_event(Event::End(BytesEnd::new("samplecharacteristics")))
+        .map_err(io_err)?;
+    write_element(writer, "channelcount", &info.audio_channels.to_string())?;
+    writer
+        .write_event(Event::End(BytesEnd::new("audio")))
+        .map_err(io_err)?;
+    writer
+        .write_event(Event::End(BytesEnd::new("media")))
+        .map_err(io_err)?;
 
     writer
         .write_event(Event::End(BytesEnd::new("file")))
@@ -226,49 +710,44 @@ fn write_file(
     Ok(())
 }
 
-/// Writes one `<link>` block describing a link-group member.
-fn write_link_block(writer: &mut Writer<Vec<u8>>, member: &LinkMember) -> Result<(), CoreError> {
-    writer
-        .write_event(Event::Start(BytesStart::new("link")))
-        .map_err(io_err)?;
+// ---------------------------------------------------------------------------
+// Small writers
+// ---------------------------------------------------------------------------
 
-    write_element(writer, "linkclipref", &member.clip_id)?;
-    let mediatype = match member.mediatype {
-        TrackKind::Video => "video",
-        TrackKind::Audio => "audio",
-    };
-    write_element(writer, "mediatype", mediatype)?;
-    write_element(writer, "trackindex", &member.track_index.to_string())?;
-    write_element(writer, "clipindex", "1")?;
-
-    writer
-        .write_event(Event::End(BytesEnd::new("link")))
-        .map_err(io_err)?;
-    Ok(())
-}
-
-/// Writes `<rate><ntsc>…</ntsc><timebase>…</timebase></rate>`.
-fn write_rate(writer: &mut Writer<Vec<u8>>, timeline: &Timeline) -> Result<(), CoreError> {
+fn write_rate(writer: &mut Writer<Vec<u8>>, fps: Fps) -> Result<(), CoreError> {
     writer
         .write_event(Event::Start(BytesStart::new("rate")))
         .map_err(io_err)?;
     write_element(
         writer,
         "ntsc",
-        if timeline.fps.is_ntsc() {
-            "TRUE"
-        } else {
-            "FALSE"
-        },
+        if fps.is_ntsc() { "TRUE" } else { "FALSE" },
     )?;
-    write_element(writer, "timebase", &timeline.fps.integer_rate().to_string())?;
+    write_element(writer, "timebase", &fps.integer_rate().to_string())?;
     writer
         .write_event(Event::End(BytesEnd::new("rate")))
         .map_err(io_err)?;
     Ok(())
 }
 
-/// Writes `<name>text</name>`.
+fn write_timecode(writer: &mut Writer<Vec<u8>>, fps: Fps) -> Result<(), CoreError> {
+    writer
+        .write_event(Event::Start(BytesStart::new("timecode")))
+        .map_err(io_err)?;
+    write_rate(writer, fps)?;
+    write_element(writer, "string", "00:00:00:00")?;
+    write_element(writer, "frame", "0")?;
+    write_element(
+        writer,
+        "displayformat",
+        if is_drop_frame(fps) { "DF" } else { "NDF" },
+    )?;
+    writer
+        .write_event(Event::End(BytesEnd::new("timecode")))
+        .map_err(io_err)?;
+    Ok(())
+}
+
 fn write_element(writer: &mut Writer<Vec<u8>>, name: &str, text: &str) -> Result<(), CoreError> {
     writer
         .write_event(Event::Start(BytesStart::new(name)))
@@ -282,16 +761,31 @@ fn write_element(writer: &mut Writer<Vec<u8>>, name: &str, text: &str) -> Result
     Ok(())
 }
 
+fn write_empty(writer: &mut Writer<Vec<u8>>, name: &str) -> Result<(), CoreError> {
+    writer
+        .write_event(Event::Empty(BytesStart::new(name)))
+        .map_err(io_err)?;
+    Ok(())
+}
+
+fn is_drop_frame(fps: Fps) -> bool {
+    fps.den == 1001 && matches!(fps.num, 30_000 | 60_000)
+}
+
+// ---------------------------------------------------------------------------
+// Paths and ids
+// ---------------------------------------------------------------------------
+
 /// Percent-encodes an absolute media path into a `file://localhost/…` URL.
 ///
-/// `C:\media\a b.mov` becomes
-/// `file://localhost/C%3a/media/a%20b.mov`. Drive letters are case-preserved;
-/// backslashes become forward slashes; every byte outside the unreserved set
-/// plus `/` is percent-encoded as **lowercase** hex, matching the form the
-/// spec writes (`file://localhost/C%3a/...`).
+/// Strips the Windows `\\?\` verbatim prefix first. `C:\media\a b.mov`
+/// becomes `file://localhost/C%3a/media/a%20b.mov`. Drive letters are
+/// case-preserved; backslashes become forward slashes; every byte outside
+/// the unreserved set plus `/` is percent-encoded as **lowercase** hex.
 #[must_use]
 pub fn encode_path_url(path: &str) -> String {
-    let normalized = path.replace('\\', "/");
+    let cleaned = strip_verbatim_prefix(path);
+    let normalized = cleaned.replace('\\', "/");
     let mut out = String::with_capacity(normalized.len() + 24);
     out.push_str("file://localhost/");
     for byte in normalized.bytes() {
@@ -308,81 +802,51 @@ pub fn encode_path_url(path: &str) -> String {
     out
 }
 
-/// One member of a link group.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LinkMember {
-    clip_id: String,
-    mediatype: TrackKind,
-    /// 1-based index within the media kind.
-    track_index: u32,
-}
-
-/// Key that identifies a potential link group: same source file, same start
-/// frame on the timeline.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct LinkKey {
-    source: String,
-    start: i64,
-}
-
-/// Maps each linked clip id to all members of its group, including itself.
-#[derive(Debug, Default)]
-struct LinkIndex {
-    groups: HashMap<String, Vec<LinkMember>>,
-}
-
-impl LinkIndex {
-    /// Builds the index by scanning every track.
-    fn build(timeline: &Timeline) -> Self {
-        let mut by_key: HashMap<LinkKey, Vec<LinkMember>> = HashMap::new();
-        for track in &timeline.tracks {
-            for clip in &track.clips {
-                let key = LinkKey {
-                    source: clip.source.clone(),
-                    start: clip.start,
-                };
-                by_key.entry(key).or_default().push(LinkMember {
-                    clip_id: clip.id.clone(),
-                    mediatype: track.kind,
-                    track_index: track.index,
-                });
-            }
-        }
-
-        let mut groups: HashMap<String, Vec<LinkMember>> = HashMap::new();
-        for (_, members) in by_key {
-            let has_video = members.iter().any(|m| m.mediatype == TrackKind::Video);
-            let has_audio = members.iter().any(|m| m.mediatype == TrackKind::Audio);
-            if !(has_video && has_audio) {
-                continue;
-            }
-            let mut sorted = members;
-            sorted.sort_by(|a, b| {
-                let kind_rank = |k: TrackKind| match k {
-                    TrackKind::Video => 0u8,
-                    TrackKind::Audio => 1,
-                };
-                kind_rank(a.mediatype)
-                    .cmp(&kind_rank(b.mediatype))
-                    .then(a.track_index.cmp(&b.track_index))
-                    .then(a.clip_id.cmp(&b.clip_id))
-            });
-            for member in &sorted {
-                groups.insert(member.clip_id.clone(), sorted.clone());
-            }
-        }
-
-        Self { groups }
-    }
-
-    /// Returns every member of `clip_id`'s group, including the clip itself,
-    /// or `None` when the clip is not linked.
-    fn group_of(&self, clip_id: &str) -> Option<&[LinkMember]> {
-        self.groups.get(clip_id).map(Vec::as_slice)
+/// Strips the Windows `\\?\` extended-length prefix when present.
+///
+/// `\\?\C:\foo` becomes `C:\foo`. `\\?\UNC\server\share` is returned
+/// unchanged because stripping it would change the path's meaning.
+fn strip_verbatim_prefix(path: &str) -> &str {
+    match path.strip_prefix(r"\\?\") {
+        Some(rest) if !rest.starts_with(r"UNC\") => rest,
+        _ => path,
     }
 }
 
-/// Wraps any `std::io::Error` from the XML writer.
+/// Produces a UUID-shaped string derived from `seed` and the current time.
+///
+/// Not cryptographically random. FCP7 uses the uuid only as a stable
+/// identifier inside one document; it is not a security token.
+fn make_uuid(seed: &str) -> String {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+
+    let mut h1 = RandomState::new().build_hasher();
+    h1.write(seed.as_bytes());
+    h1.write_u128(nanos);
+    let a = h1.finish();
+
+    let mut h2 = RandomState::new().build_hasher();
+    h2.write_u128(nanos);
+    h2.write(seed.as_bytes());
+    let b = h2.finish();
+
+    format!(
+        "{:08X}-{:04X}-{:04X}-{:04X}-{:012X}",
+        (a >> 32) as u32,
+        (a >> 16) as u16,
+        a as u16,
+        (b >> 48) as u16,
+        b & 0xffff_ffff_ffff,
+    )
+}
+
 fn io_err(e: std::io::Error) -> CoreError {
     CoreError::Io(e)
 }
@@ -390,133 +854,153 @@ fn io_err(e: std::io::Error) -> CoreError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::timeline::{Clip, Fps, Timeline, Track, TrackKind};
+    use crate::timeline::Clip;
 
-    fn tl_30() -> Timeline {
+    fn tl_audio_only() -> Timeline {
         Timeline {
-            fps: Fps { num: 30, den: 1 },
+            fps: Fps {
+                num: 30_000,
+                den: 1001,
+            },
             width: 1920,
             height: 1080,
             tracks: vec![Track {
-                kind: TrackKind::Video,
+                kind: TrackKind::Audio,
                 index: 1,
-                clips: vec![Clip {
-                    id: "v1".into(),
-                    source: "C:\\media\\a b.mov".into(),
-                    source_in: 0,
-                    source_out: 300,
-                    start: 0,
-                    speed: 1.0,
-                    has_audio: true,
-                    muted: false,
-                }],
+                clips: vec![
+                    Clip {
+                        id: "a1__0".into(),
+                        source: "\\\\?\\C:\\media\\speech1.mp4".into(),
+                        source_in: 52,
+                        source_out: 118,
+                        start: 0,
+                        speed: 1.0,
+                        has_audio: true,
+                        muted: false,
+                    },
+                    Clip {
+                        id: "a1__1".into(),
+                        source: "\\\\?\\C:\\media\\speech1.mp4".into(),
+                        source_in: 200,
+                        source_out: 300,
+                        start: 66,
+                        speed: 1.0,
+                        has_audio: true,
+                        muted: false,
+                    },
+                ],
             }],
         }
     }
 
-    fn linked_tl() -> Timeline {
-        let mut tl = tl_30();
-        tl.tracks.push(Track {
-            kind: TrackKind::Audio,
-            index: 1,
-            clips: vec![Clip {
-                id: "a1".into(),
-                source: "C:\\media\\a b.mov".into(),
-                source_in: 0,
-                source_out: 300,
-                start: 0,
-                speed: 1.0,
-                has_audio: true,
-                muted: false,
-            }],
-        });
-        tl
+    fn sources_for() -> HashMap<String, SourceInfo> {
+        let mut m = HashMap::new();
+        m.insert(
+            "\\\\?\\C:\\media\\speech1.mp4".to_string(),
+            SourceInfo {
+                total_frames: 375,
+                audio_channels: 1,
+                audio_sample_rate: 48_000,
+                audio_bit_depth: 16,
+                has_video: false,
+                video_width: 1920,
+                video_height: 1080,
+            },
+        );
+        m
     }
 
     #[test]
-    fn encode_path_url_windows() {
+    fn strip_verbatim_prefix_removes_drive_prefix() {
+        assert_eq!(strip_verbatim_prefix(r"\\?\C:\foo"), r"C:\foo");
+        assert_eq!(strip_verbatim_prefix(r"C:\foo"), r"C:\foo");
+    }
+
+    #[test]
+    fn strip_verbatim_prefix_leaves_unc_alone() {
         assert_eq!(
-            encode_path_url("C:\\media\\a b.mov"),
-            "file://localhost/C%3a/media/a%20b.mov"
+            strip_verbatim_prefix(r"\\?\UNC\srv\share"),
+            r"\\?\UNC\srv\share"
         );
     }
 
     #[test]
-    fn encode_path_url_keeps_safe_bytes() {
+    fn encode_path_url_strips_prefix() {
         assert_eq!(
-            encode_path_url("C:\\a-b_c.d~e.mov"),
-            "file://localhost/C%3a/a-b_c.d~e.mov"
+            encode_path_url(r"\\?\C:\Users\me\a b.mp4"),
+            "file://localhost/C%3a/Users/me/a%20b.mp4"
         );
     }
 
     #[test]
-    fn encode_path_url_percent_encodes_hash_and_amp() {
-        assert_eq!(
-            encode_path_url("C:\\x#y&z.mov"),
-            "file://localhost/C%3a/x%23y%26z.mov"
-        );
+    fn encode_path_url_no_percent_3f() {
+        let url = encode_path_url(r"\\?\C:\media\speech1.mp4");
+        assert!(!url.contains("%3f"), "{url}");
     }
 
     #[test]
-    fn xmeml_has_declaration_and_root() {
-        let xml = write_xmeml(&tl_30(), "Original").unwrap();
-        assert!(xml.starts_with("<?xml"));
-        assert!(xml.contains("<xmeml version=\"4\">"));
-        assert!(xml.contains("</xmeml>"));
+    fn doctype_is_bare() {
+        let tl = tl_audio_only();
+        let xml = write_xmeml(&tl, "T", XmlProfile::Full, &sources_for()).unwrap();
+        assert!(xml.contains("<!DOCTYPE xmeml>"), "{xml}");
+        assert!(!xml.contains("SYSTEM"), "{xml}");
     }
 
     #[test]
-    fn xmeml_names_the_new_sequence() {
-        let xml = write_xmeml(&tl_30(), "Interview").unwrap();
-        assert!(xml.contains("<name>Interview - SvaraFlow cut</name>"));
+    fn full_profile_has_uuid_timecode_and_video_block() {
+        let tl = tl_audio_only();
+        let xml = write_xmeml(&tl, "T", XmlProfile::Full, &sources_for()).unwrap();
+        assert!(xml.contains("<uuid>"), "{xml}");
+        assert!(xml.contains("<timecode>"), "{xml}");
+        assert!(xml.contains("<video>"), "{xml}");
+        assert!(xml.contains("<track/>"), "{xml}");
+        assert!(xml.contains("<numOutputChannels>"), "{xml}");
+        assert!(xml.contains("<outputchannelindex>"), "{xml}");
     }
 
     #[test]
-    fn xmeml_rejects_empty_tracks() {
-        let mut tl = tl_30();
-        tl.tracks.clear();
-        assert!(matches!(
-            write_xmeml(&tl, "x"),
-            Err(CoreError::InvalidTimeline(_))
-        ));
+    fn one_file_definition_per_source() {
+        let tl = tl_audio_only();
+        let xml = write_xmeml(&tl, "T", XmlProfile::Full, &sources_for()).unwrap();
+        let full = xml.matches("<file id=\"file-1\">").count();
+        let refs = xml.matches("<file id=\"file-1\"/>").count();
+        assert_eq!(full, 1, "exactly one full definition: {xml}");
+        assert_eq!(refs, 1, "later clipitem references the file: {xml}");
     }
 
     #[test]
-    fn xmeml_writes_rate_with_ntsc_flag() {
-        let xml = write_xmeml(&tl_30(), "x").unwrap();
-        assert!(xml.contains("<ntsc>FALSE</ntsc>"));
-        assert!(xml.contains("<timebase>30</timebase>"));
+    fn file_duration_is_total_source_not_segment() {
+        let tl = tl_audio_only();
+        let xml = write_xmeml(&tl, "T", XmlProfile::Full, &sources_for()).unwrap();
+        assert!(xml.contains("<duration>375</duration>"), "{xml}");
     }
 
     #[test]
-    fn xmeml_writes_ntsc_true_for_29_97() {
-        let mut tl = tl_30();
-        tl.fps = Fps {
-            num: 30_000,
-            den: 1001,
-        };
-        let xml = write_xmeml(&tl, "x").unwrap();
-        assert!(xml.contains("<ntsc>TRUE</ntsc>"));
-        assert!(xml.contains("<timebase>30</timebase>"));
+    fn clipitem_has_sourcetrack() {
+        let tl = tl_audio_only();
+        let xml = write_xmeml(&tl, "T", XmlProfile::Full, &sources_for()).unwrap();
+        assert!(xml.contains("<sourcetrack>"), "{xml}");
+        assert!(xml.contains("<mediatype>audio</mediatype>"), "{xml}");
     }
 
     #[test]
-    fn xmeml_writes_clipitem_frames() {
-        let xml = write_xmeml(&tl_30(), "x").unwrap();
-        assert!(xml.contains("<start>0</start>"));
-        assert!(xml.contains("<end>300</end>"));
-        assert!(xml.contains("<in>0</in>"));
-        assert!(xml.contains("<out>300</out>"));
+    fn minimal_profile_writes_one_clip() {
+        let tl = tl_audio_only();
+        let xml = write_xmeml(&tl, "T", XmlProfile::Minimal, &sources_for()).unwrap();
+        assert_eq!(xml.matches("<clipitem").count(), 1, "{xml}");
+        assert!(!xml.contains("<uuid>"), "{xml}");
     }
 
     #[test]
-    fn xmeml_writes_file_pathurl() {
-        let xml = write_xmeml(&tl_30(), "x").unwrap();
-        assert!(xml.contains("<pathurl>file://localhost/C%3a/media/a%20b.mov</pathurl>"));
+    fn cuts_profile_writes_all_clips_without_video_block() {
+        let tl = tl_audio_only();
+        let xml = write_xmeml(&tl, "T", XmlProfile::Cuts, &sources_for()).unwrap();
+        assert_eq!(xml.matches("<clipitem").count(), 2, "{xml}");
+        assert!(!xml.contains("<video>"), "{xml}");
     }
 
     #[test]
-    fn xmeml_writes_enabled_false_for_muted_audio() {
+    fn empty_timeline_errors() {
         let tl = Timeline {
             fps: Fps { num: 30, den: 1 },
             width: 1920,
@@ -524,81 +1008,10 @@ mod tests {
             tracks: vec![Track {
                 kind: TrackKind::Audio,
                 index: 1,
-                clips: vec![Clip {
-                    id: "a1".into(),
-                    source: "C:\\media\\a.wav".into(),
-                    source_in: 0,
-                    source_out: 300,
-                    start: 0,
-                    speed: 1.0,
-                    has_audio: true,
-                    muted: true,
-                }],
+                clips: vec![],
             }],
         };
-        let xml = write_xmeml(&tl, "x").unwrap();
-        assert!(xml.contains("<enabled>FALSE</enabled>"));
-    }
-
-    #[test]
-    fn xmeml_never_mutes_video() {
-        let mut tl = tl_30();
-        tl.tracks[0].clips[0].muted = true;
-        let xml = write_xmeml(&tl, "x").unwrap();
-        assert!(xml.contains("<enabled>TRUE</enabled>"));
-        assert!(!xml.contains("<enabled>FALSE</enabled>"));
-    }
-
-    // --- linking ---------------------------------------------------------
-
-    #[test]
-    fn standalone_clip_has_no_link_block() {
-        let xml = write_xmeml(&tl_30(), "x").unwrap();
-        assert!(
-            !xml.contains("<link>"),
-            "single video clip must not emit link blocks: {xml}"
-        );
-    }
-
-    #[test]
-    fn linked_pair_writes_two_link_blocks_per_clip() {
-        let xml = write_xmeml(&linked_tl(), "x").unwrap();
-        let count = xml.matches("<link>").count();
-        assert_eq!(count, 4, "expected 4 link blocks, got {count} in:\n{xml}");
-    }
-
-    #[test]
-    fn linked_pair_references_the_other_clip() {
-        let xml = write_xmeml(&linked_tl(), "x").unwrap();
-        assert!(xml.contains("<linkclipref>v1</linkclipref>"));
-        assert!(xml.contains("<linkclipref>a1</linkclipref>"));
-        assert!(xml.contains("<mediatype>video</mediatype>"));
-        assert!(xml.contains("<mediatype>audio</mediatype>"));
-    }
-
-    #[test]
-    fn clips_with_different_starts_are_not_linked() {
-        let mut tl = linked_tl();
-        tl.tracks[1].clips[0].start = 100;
-        let xml = write_xmeml(&tl, "x").unwrap();
-        assert!(
-            !xml.contains("<link>"),
-            "clips with different starts must not be linked: {xml}"
-        );
-    }
-
-    #[test]
-    fn two_video_clips_are_not_linked() {
-        let mut tl = tl_30();
-        tl.tracks.push(Track {
-            kind: TrackKind::Video,
-            index: 2,
-            clips: vec![tl.tracks[0].clips[0].clone()],
-        });
-        let xml = write_xmeml(&tl, "x").unwrap();
-        assert!(
-            !xml.contains("<link>"),
-            "video-only groups must not be linked: {xml}"
-        );
+        let err = write_xmeml(&tl, "T", XmlProfile::Full, &HashMap::new()).unwrap_err();
+        assert!(err.to_string().contains("no clips"), "{err}");
     }
 }

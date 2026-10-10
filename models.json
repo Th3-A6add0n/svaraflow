@@ -1,0 +1,33 @@
+// models.json
+{
+  "version": 1,
+  "_comment": "Model manifest for SvaraFlow's speech-to-text tiers. The 'url' and 'sha256' fields below are marked TODO. Fill them in with the exact download URL and the lowercase hex SHA-256 of the file the URL serves. The downloader treats a value of 'TODO' as 'skip verification', which lets you exercise the pipeline before the hashes are known. Do not commit model files; they belong in %LOCALAPPDATA%/SvaraFlow/models and are gitignored.",
+  "models": [
+    {
+      "name": "Whisper-Hindi2Hinglish-Swift",
+      "tier": "light",
+      "description": "Whisper-base-sized Hindi-to-Hinglish model. Fast, lower accuracy. Writes Roman Hinglish directly.",
+      "filename": "ggml-hindi2hinglish-swift.bin",
+      "url": "TODO",
+      "revision": "main",
+      "size_bytes": 0,
+      "sha256": "TODO",
+      "license": "Apache-2.0",
+      "quantization": "f16",
+      "source_repo": "Oriserve/Whisper-Hindi2Hinglish-Swift"
+    },
+    {
+      "name": "Whisper-Hindi2Hinglish-Apex",
+      "tier": "standard",
+      "description": "Large-v3-turbo-based Hindi-to-Hinglish model. Slower, higher accuracy. Writes Roman Hinglish directly.",
+      "filename": "ggml-hindi2hinglish-apex-q5_0.bin",
+      "url": "TODO",
+      "revision": "main",
+      "size_bytes": 547000000,
+      "sha256": "TODO",
+      "license": "Apache-2.0",
+      "quantization": "q5_0",
+      "source_repo": "Oriserve/Whisper-Hindi2Hinglish-Apex"
+    }
+  ]
+}

@@ -1,33 +1,26 @@
-// svaraflow-core/src/silence.rs
 //! Silence detection over a dBFS envelope.
-//!
-//! Two entry points:
-//!
-//! - [`detect_silence`] — the threshold method (spec section C). Uses the
-//!   envelope alone.
-//! - [`detect_silence_with_vad`] — the neural VAD and hybrid methods (spec
-//!   section D).
-//!
-//! Both share the same post-processing pipeline: drop short talks, fill
-//! short silences, pad and merge, then snap to the timeline frame grid.
 //!
 //! # Units
 //!
-//! Two different "frames" appear in the code and in this documentation:
+//! User-facing durations are **integer milliseconds**. Internal math is
+//! exact: milliseconds are converted to seconds only where the pipeline
+//! needs them, and the conversion is `ms / 1000.0` (a `f64` division by a
+//! power of ten, which is exact for the values we accept).
 //!
-//! - **envelope frames** — 10 ms each with the default [`EnvelopeParams`].
-//! - **timeline frames** — whatever the timeline's `fps` says. Step 5
-//!   converts into timeline frames and stays there.
+//! # Presets
 //!
-//! # Outer edges vs. inner boundaries
+//! Five built-ins, defined by [`BuiltinPreset`]. `natural` is the default.
+//! `max` uses [`SnapMode::Nearest`] by default; the others use
+//! [`SnapMode::Inward`].
 //!
-//! The snap step shrinks *inner* boundaries inward (ceil on the start, floor
-//! on the end), so no word is ever clipped at an internal cut. The *outer*
-//! edges are different: the first silence starts at 0 and the last silence
-//! ends at the timeline's total frame count, because the audio runs out at
-//! the timeline's end.
+//! # Snap modes
 //!
-//! [`EnvelopeParams`]: crate::audio::EnvelopeParams
+//! - [`SnapMode::Inward`] — `ceil` on the silence start, `floor` on the end.
+//!   The timeline-frame silence is a subset of the envelope-frame silence,
+//!   so no word is clipped.
+//! - [`SnapMode::Nearest`] — round both edges to the nearest frame. Can
+//!   clip a word at an internal boundary. Use when the frame grid is very
+//!   fine relative to the audio.
 
 use crate::audio::Envelope;
 use crate::error::CoreError;
@@ -37,8 +30,8 @@ use crate::vad::{hybrid_snap, Vad, VadParams, DEFAULT_SNAP_RADIUS_S};
 /// Hysteresis applied below the noise floor when a sound run ends, in dB.
 pub const HYSTERESIS_DB: f32 = 3.0;
 
-/// Safety floor for padding and silence removal, in seconds.
-pub const MIN_SAFE_SECONDS: f64 = 0.05;
+/// Safety floor. Values below this raise a warning but are accepted.
+pub const MIN_SAFE_MS: u32 = 50;
 
 /// Lowest auto noise level, in dBFS.
 pub const AUTO_NOISE_MIN_DB: f32 = -60.0;
@@ -58,10 +51,9 @@ pub const AUTO_NOISE_QUIET_FRACTION: f64 = 0.20;
 pub enum Method {
     /// Threshold detection on the dBFS envelope with hysteresis.
     Threshold,
-    /// Silero VAD only. Requires [`detect_silence_with_vad`].
+    /// Silero VAD only.
     Vad,
-    /// Silero VAD for the speech/silence decision, then boundary snapping
-    /// to the lowest-energy frame within 100 ms.
+    /// Silero VAD for the speech/silence decision, then boundary snapping.
     Hybrid,
 }
 
@@ -74,18 +66,146 @@ pub enum NoiseSetting {
     Manual(f32),
 }
 
-/// Built-in tuning presets.
+/// Where the noise floor in a report came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Preset {
-    /// `remove_silences_s = 0.80`, `keep_talks_s = 0.30`.
-    Calm,
-    /// `remove_silences_s = 0.50`, `keep_talks_s = 0.25`.
-    Measured,
-    /// `remove_silences_s = 0.35`, `keep_talks_s = 0.20`.
-    Paced,
-    /// `remove_silences_s = 0.20`, `keep_talks_s = 0.15`,
-    /// `pad_before_s = pad_after_s = 0.08`.
-    Fast,
+pub enum NoiseSource {
+    /// Derived from the envelope or the VAD mask.
+    Auto,
+    /// Supplied by the user.
+    Manual,
+}
+
+/// How silence boundaries snap to the timeline's frame grid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SnapMode {
+    /// Shrink inward. Default; never clips a word.
+    Inward,
+    /// Round to the nearest frame. Can clip a word at an internal boundary.
+    Nearest,
+}
+
+/// The five built-in pacing presets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuiltinPreset {
+    /// Long, gentle cuts.
+    Relaxed,
+    /// Balanced. The default.
+    Natural,
+    /// Tighter cuts.
+    Brisk,
+    /// Tight cuts for dense speech.
+    Tight,
+    /// Maximum removal; uses [`SnapMode::Nearest`] by default.
+    Max,
+}
+
+/// The numeric values a preset resolves to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PresetValues {
+    /// Silence removal threshold, milliseconds.
+    pub remove_silences_ms: u32,
+    /// Minimum kept speech, milliseconds.
+    pub keep_talks_ms: u32,
+    /// Padding before each kept run, milliseconds.
+    pub margin_before_ms: u32,
+    /// Padding after each kept run, milliseconds.
+    pub margin_after_ms: u32,
+    /// Minimum gap between cuts. `0` disables the rule.
+    pub min_between_cuts_ms: u32,
+}
+
+impl BuiltinPreset {
+    /// Every built-in, in the order they print in.
+    pub const ALL: [BuiltinPreset; 5] = [
+        BuiltinPreset::Relaxed,
+        BuiltinPreset::Natural,
+        BuiltinPreset::Brisk,
+        BuiltinPreset::Tight,
+        BuiltinPreset::Max,
+    ];
+
+    /// Canonical lowercase name.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            BuiltinPreset::Relaxed => "relaxed",
+            BuiltinPreset::Natural => "natural",
+            BuiltinPreset::Brisk => "brisk",
+            BuiltinPreset::Tight => "tight",
+            BuiltinPreset::Max => "max",
+        }
+    }
+
+    /// The preset's numeric values.
+    #[must_use]
+    pub fn values(self) -> PresetValues {
+        match self {
+            BuiltinPreset::Relaxed => PresetValues {
+                remove_silences_ms: 500,
+                keep_talks_ms: 250,
+                margin_before_ms: 150,
+                margin_after_ms: 150,
+                min_between_cuts_ms: 0,
+            },
+            BuiltinPreset::Natural => PresetValues {
+                remove_silences_ms: 300,
+                keep_talks_ms: 150,
+                margin_before_ms: 100,
+                margin_after_ms: 100,
+                min_between_cuts_ms: 0,
+            },
+            BuiltinPreset::Brisk => PresetValues {
+                remove_silences_ms: 180,
+                keep_talks_ms: 100,
+                margin_before_ms: 80,
+                margin_after_ms: 80,
+                min_between_cuts_ms: 0,
+            },
+            BuiltinPreset::Tight => PresetValues {
+                remove_silences_ms: 100,
+                keep_talks_ms: 70,
+                margin_before_ms: 60,
+                margin_after_ms: 60,
+                min_between_cuts_ms: 0,
+            },
+            BuiltinPreset::Max => PresetValues {
+                remove_silences_ms: 50,
+                keep_talks_ms: 50,
+                margin_before_ms: 50,
+                margin_after_ms: 50,
+                min_between_cuts_ms: 0,
+            },
+        }
+    }
+
+    /// The snap mode this preset uses by default.
+    #[must_use]
+    pub fn default_snap(self) -> SnapMode {
+        match self {
+            BuiltinPreset::Max => SnapMode::Nearest,
+            _ => SnapMode::Inward,
+        }
+    }
+
+    /// Parses a name. Case-insensitive.
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.to_ascii_lowercase().as_str() {
+            "relaxed" => Ok(BuiltinPreset::Relaxed),
+            "natural" => Ok(BuiltinPreset::Natural),
+            "brisk" => Ok(BuiltinPreset::Brisk),
+            "tight" => Ok(BuiltinPreset::Tight),
+            "max" => Ok(BuiltinPreset::Max),
+            _ => Err(format!(
+                "unknown preset `{s}`; try relaxed, natural, brisk, tight, max"
+            )),
+        }
+    }
+}
+
+impl Default for BuiltinPreset {
+    fn default() -> Self {
+        BuiltinPreset::Natural
+    }
 }
 
 /// Parameters for [`detect_silence`] and [`detect_silence_with_vad`].
@@ -95,122 +215,137 @@ pub struct SilenceParams {
     pub method: Method,
     /// Noise floor source.
     pub noise: NoiseSetting,
-    /// Minimum silence length to remove, in seconds.
-    pub remove_silences_s: f64,
-    /// Minimum sound length to keep, in seconds.
-    pub keep_talks_s: f64,
-    /// Pad added before each sound run, in seconds.
-    pub pad_before_s: f64,
-    /// Pad added after each sound run, in seconds.
-    pub pad_after_s: f64,
+    /// Silence removal threshold, milliseconds.
+    pub remove_silences_ms: u32,
+    /// Minimum kept speech, milliseconds.
+    pub keep_talks_ms: u32,
+    /// Padding before each kept run, milliseconds.
+    pub margin_before_ms: u32,
+    /// Padding after each kept run, milliseconds.
+    pub margin_after_ms: u32,
+    /// Minimum gap between cuts, milliseconds. `0` disables the rule.
+    pub min_between_cuts_ms: u32,
+    /// Boundary snap mode.
+    pub snap: SnapMode,
 }
 
 impl Default for SilenceParams {
     fn default() -> Self {
-        Self {
-            method: Method::Threshold,
-            noise: NoiseSetting::Auto,
-            remove_silences_s: 0.50,
-            keep_talks_s: 0.25,
-            pad_before_s: 0.10,
-            pad_after_s: 0.10,
-        }
+        Self::from_preset(BuiltinPreset::Natural)
     }
 }
 
 impl SilenceParams {
-    /// Constructs the preset's parameters.
+    /// Builds parameters from a built-in preset.
     #[must_use]
-    pub fn preset(preset: Preset) -> Self {
-        match preset {
-            Preset::Calm => Self {
-                remove_silences_s: 0.80,
-                keep_talks_s: 0.30,
-                ..Self::default()
-            },
-            Preset::Measured => Self::default(),
-            Preset::Paced => Self {
-                remove_silences_s: 0.35,
-                keep_talks_s: 0.20,
-                ..Self::default()
-            },
-            Preset::Fast => Self {
-                remove_silences_s: 0.20,
-                keep_talks_s: 0.15,
-                pad_before_s: 0.08,
-                pad_after_s: 0.08,
-                ..Self::default()
-            },
+    pub fn from_preset(preset: BuiltinPreset) -> Self {
+        let v = preset.values();
+        Self {
+            method: Method::Threshold,
+            noise: NoiseSetting::Auto,
+            remove_silences_ms: v.remove_silences_ms,
+            keep_talks_ms: v.keep_talks_ms,
+            margin_before_ms: v.margin_before_ms,
+            margin_after_ms: v.margin_after_ms,
+            min_between_cuts_ms: v.min_between_cuts_ms,
+            snap: preset.default_snap(),
         }
     }
 
-    /// Warnings for values below [`MIN_SAFE_SECONDS`].
+    /// Builds parameters from explicit values. Snap mode is [`SnapMode::Inward`].
+    #[must_use]
+    pub fn from_values(v: PresetValues) -> Self {
+        Self {
+            method: Method::Threshold,
+            noise: NoiseSetting::Auto,
+            remove_silences_ms: v.remove_silences_ms,
+            keep_talks_ms: v.keep_talks_ms,
+            margin_before_ms: v.margin_before_ms,
+            margin_after_ms: v.margin_after_ms,
+            min_between_cuts_ms: v.min_between_cuts_ms,
+            snap: SnapMode::Inward,
+        }
+    }
+
+    /// The numeric values this parameter set carries.
+    #[must_use]
+    pub fn values(&self) -> PresetValues {
+        PresetValues {
+            remove_silences_ms: self.remove_silences_ms,
+            keep_talks_ms: self.keep_talks_ms,
+            margin_before_ms: self.margin_before_ms,
+            margin_after_ms: self.margin_after_ms,
+            min_between_cuts_ms: self.min_between_cuts_ms,
+        }
+    }
+
+    /// Warnings for values below [`MIN_SAFE_MS`].
     #[must_use]
     pub fn warnings(&self) -> Vec<SilenceWarning> {
         let mut out = Vec::new();
-        if self.pad_before_s < MIN_SAFE_SECONDS {
-            out.push(SilenceWarning::PaddingBelowSafety {
-                which: PadSide::Before,
-                value_s: self.pad_before_s,
+        if self.margin_before_ms < MIN_SAFE_MS {
+            out.push(SilenceWarning::MarginBelowSafety {
+                which: MarginSide::Before,
+                value_ms: self.margin_before_ms,
             });
         }
-        if self.pad_after_s < MIN_SAFE_SECONDS {
-            out.push(SilenceWarning::PaddingBelowSafety {
-                which: PadSide::After,
-                value_s: self.pad_after_s,
+        if self.margin_after_ms < MIN_SAFE_MS {
+            out.push(SilenceWarning::MarginBelowSafety {
+                which: MarginSide::After,
+                value_ms: self.margin_after_ms,
             });
         }
-        if self.remove_silences_s < MIN_SAFE_SECONDS {
+        if self.remove_silences_ms < MIN_SAFE_MS {
             out.push(SilenceWarning::RemoveSilencesBelowSafety {
-                value_s: self.remove_silences_s,
+                value_ms: self.remove_silences_ms,
             });
         }
         out
     }
 }
 
-/// Which pad a [`SilenceWarning::PaddingBelowSafety`] refers to.
+/// Which margin a [`SilenceWarning::MarginBelowSafety`] refers to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PadSide {
-    /// `pad_before_s`.
+pub enum MarginSide {
+    /// `margin_before_ms`.
     Before,
-    /// `pad_after_s`.
+    /// `margin_after_ms`.
     After,
 }
 
 /// Non-fatal warnings raised by the detector.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SilenceWarning {
-    /// Padding below [`MIN_SAFE_SECONDS`].
-    PaddingBelowSafety {
+    /// Margin below [`MIN_SAFE_MS`].
+    MarginBelowSafety {
         /// Which side.
-        which: PadSide,
-        /// The offending value, in seconds.
-        value_s: f64,
+        which: MarginSide,
+        /// The offending value, in milliseconds.
+        value_ms: u32,
     },
-    /// `remove_silences_s` below [`MIN_SAFE_SECONDS`].
+    /// `remove_silences_ms` below [`MIN_SAFE_MS`].
     RemoveSilencesBelowSafety {
-        /// The offending value, in seconds.
-        value_s: f64,
+        /// The offending value, in milliseconds.
+        value_ms: u32,
     },
 }
 
 impl std::fmt::Display for SilenceWarning {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::PaddingBelowSafety { which, value_s } => {
+            Self::MarginBelowSafety { which, value_ms } => {
                 let side = match which {
-                    PadSide::Before => "pad_before",
-                    PadSide::After => "pad_after",
+                    MarginSide::Before => "margin_before_ms",
+                    MarginSide::After => "margin_after_ms",
                 };
                 write!(
                     f,
-                    "{side} {value_s:.3} s is below the {MIN_SAFE_SECONDS:.2} s safety threshold"
+                    "{side} {value_ms} ms is below the {MIN_SAFE_MS} ms safety threshold"
                 )
             }
-            Self::RemoveSilencesBelowSafety { value_s } => write!(
+            Self::RemoveSilencesBelowSafety { value_ms } => write!(
                 f,
-                "remove_silences {value_s:.3} s is below the {MIN_SAFE_SECONDS:.2} s safety threshold"
+                "remove_silences_ms {value_ms} ms is below the {MIN_SAFE_MS} ms safety threshold"
             ),
         }
     }
@@ -245,6 +380,76 @@ impl FrameRange {
     }
 }
 
+/// One cut in the report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CutDetail {
+    /// Inclusive first timeline frame.
+    pub start: i64,
+    /// Exclusive last timeline frame.
+    pub end: i64,
+}
+
+impl CutDetail {
+    /// Frames removed by this cut.
+    #[must_use]
+    pub fn length_frames(&self) -> i64 {
+        (self.end - self.start).max(0)
+    }
+
+    /// Milliseconds removed by this cut at `fps`.
+    #[must_use]
+    pub fn length_ms(&self, fps: Fps) -> u32 {
+        (fps.frames_to_seconds(self.length_frames()) * 1000.0).round() as u32
+    }
+}
+
+/// Explainability data for one analysis.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AnalysisReport {
+    /// Noise level used, in dBFS.
+    pub noise_db: f32,
+    /// Whether the noise level was auto-derived or supplied.
+    pub noise_source: NoiseSource,
+    /// Percentage of envelope frames strictly below `noise_db`.
+    pub frames_below_noise_pct: f64,
+    /// Silences found by detection, before `min_between_cuts`.
+    pub silences_found: usize,
+    /// Silences that survived to be cut.
+    pub silences_cut: usize,
+    /// Cuts prevented by `min_between_cuts_ms`. Two per merged keep.
+    pub cuts_prevented: usize,
+    /// Average length of a cut, in timeline frames.
+    pub average_cut_frames: f64,
+    /// Longest cut, in timeline frames.
+    pub max_cut_frames: i64,
+    /// Shortest cut, in timeline frames.
+    pub shortest_cut_frames: i64,
+    /// Up to five longest cuts, in descending length.
+    pub longest_cuts: Vec<FrameRange>,
+    /// Every cut, in timeline order.
+    pub per_cut: Vec<CutDetail>,
+}
+
+impl AnalysisReport {
+    /// An empty report.
+    #[must_use]
+    pub fn empty(noise_db: f32, noise_source: NoiseSource) -> Self {
+        Self {
+            noise_db,
+            noise_source,
+            frames_below_noise_pct: 0.0,
+            silences_found: 0,
+            silences_cut: 0,
+            cuts_prevented: 0,
+            average_cut_frames: 0.0,
+            max_cut_frames: 0,
+            shortest_cut_frames: 0,
+            longest_cuts: Vec::new(),
+            per_cut: Vec::new(),
+        }
+    }
+}
+
 /// Summary statistics for the analysis.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SilenceStats {
@@ -273,6 +478,8 @@ pub struct SilenceRanges {
     pub noise_db: f32,
     /// Non-fatal warnings from the parameters.
     pub warnings: Vec<SilenceWarning>,
+    /// Explainability data.
+    pub report: AnalysisReport,
 }
 
 // ---------------------------------------------------------------------------
@@ -327,51 +534,32 @@ pub fn auto_noise_level_from_vad(envelope: &Envelope, speech: &[bool]) -> f32 {
 }
 
 /// Detects keep and silence ranges using the threshold method.
+///
+/// # Errors
+///
+/// - [`CoreError::NotImplemented`] for `Method::Vad` and `Method::Hybrid`.
+/// - [`CoreError::InvalidTimeline`] when the envelope's
+///   `seconds_per_frame()` is zero.
 pub fn detect_silence(
     envelope: &Envelope,
     params: &SilenceParams,
     timeline_fps: Fps,
 ) -> Result<SilenceRanges, CoreError> {
-    let warnings = params.warnings();
-
-    if envelope.is_empty() {
-        return Ok(empty_result(params, warnings));
-    }
-
-    match params.method {
-        Method::Threshold => {}
-        Method::Vad => {
-            return Err(CoreError::NotImplemented(
-                "Method::Vad requires detect_silence_with_vad",
-            ))
-        }
-        Method::Hybrid => {
-            return Err(CoreError::NotImplemented(
-                "Method::Hybrid requires detect_silence_with_vad",
-            ))
-        }
-    }
-
-    let seconds_per_env_frame = envelope.seconds_per_frame();
-    if seconds_per_env_frame <= 0.0 {
-        return Err(CoreError::InvalidTimeline(
-            "envelope has zero seconds per frame".into(),
+    if params.method != Method::Threshold {
+        return Err(CoreError::NotImplemented(
+            "Method::Vad and Method::Hybrid require detect_silence_with_vad",
         ));
     }
-
-    let noise_db = match params.noise {
-        NoiseSetting::Manual(v) => v,
-        NoiseSetting::Auto => auto_noise_level(envelope),
-    };
-
-    let mask = sound_mask(&envelope.levels_db, noise_db, HYSTERESIS_DB);
-    let pipeline = finish_pipeline(mask, seconds_per_env_frame, params, timeline_fps);
-
-    Ok(result_from_pipeline(pipeline, noise_db, warnings))
+    detect_impl(envelope, params, timeline_fps, None)
 }
 
 /// Detects keep and silence ranges using the neural VAD or the hybrid
 /// method.
+///
+/// # Errors
+///
+/// Whatever the [`Vad`] implementation returns, or
+/// [`CoreError::InvalidTimeline`] when the envelope is degenerate.
 pub fn detect_silence_with_vad(
     envelope: &Envelope,
     params: &SilenceParams,
@@ -382,11 +570,20 @@ pub fn detect_silence_with_vad(
     if params.method == Method::Threshold {
         return detect_silence(envelope, params, timeline_fps);
     }
+    detect_impl(envelope, params, timeline_fps, Some((vad, samples)))
+}
 
+fn detect_impl(
+    envelope: &Envelope,
+    params: &SilenceParams,
+    timeline_fps: Fps,
+    vad_and_samples: Option<(&mut dyn Vad, &[f32])>,
+) -> Result<SilenceRanges, CoreError> {
     let warnings = params.warnings();
 
     if envelope.is_empty() {
-        return Ok(empty_result(params, warnings));
+        let (noise_db, source) = resolve_noise_empty(params);
+        return Ok(empty_result(noise_db, source, warnings));
     }
 
     let seconds_per_env_frame = envelope.seconds_per_frame();
@@ -396,66 +593,38 @@ pub fn detect_silence_with_vad(
         ));
     }
 
-    let probabilities = vad.speech_probabilities(samples)?;
-    let native_mask = probabilities.into_mask(&VadParams::default());
-    let resampled = native_mask.resample_to(seconds_per_env_frame, envelope.len());
-
-    let sound = if params.method == Method::Hybrid {
-        let radius_frames = (DEFAULT_SNAP_RADIUS_S / seconds_per_env_frame).round() as usize;
-        hybrid_snap(&resampled, &envelope.levels_db, radius_frames)
-    } else {
-        resampled
+    let (mask, noise_db, noise_source) = match vad_and_samples {
+        None => {
+            let (noise_db, source) = match params.noise {
+                NoiseSetting::Manual(v) => (v, NoiseSource::Manual),
+                NoiseSetting::Auto => (auto_noise_level(envelope), NoiseSource::Auto),
+            };
+            let mask = sound_mask(&envelope.levels_db, noise_db, HYSTERESIS_DB);
+            (mask, noise_db, source)
+        }
+        Some((vad, samples)) => {
+            let probs = vad.speech_probabilities(samples)?;
+            let native_mask = probs.into_mask(&VadParams::default());
+            let resampled = native_mask.resample_to(seconds_per_env_frame, envelope.len());
+            let sound = if params.method == Method::Hybrid {
+                let radius = (DEFAULT_SNAP_RADIUS_S / seconds_per_env_frame).round() as usize;
+                hybrid_snap(&resampled, &envelope.levels_db, radius)
+            } else {
+                resampled
+            };
+            let (noise_db, source) = match params.noise {
+                NoiseSetting::Manual(v) => (v, NoiseSource::Manual),
+                NoiseSetting::Auto => (auto_noise_level_from_vad(envelope, &sound), NoiseSource::Auto),
+            };
+            (sound, noise_db, source)
+        }
     };
 
-    let noise_db = match params.noise {
-        NoiseSetting::Manual(v) => v,
-        NoiseSetting::Auto => auto_noise_level_from_vad(envelope, &sound),
-    };
+    let pct_below = frames_below_noise_pct(&envelope.levels_db, noise_db);
+    let pipeline = finish_pipeline(mask, seconds_per_env_frame, params, timeline_fps);
+    let report = build_report(&pipeline, noise_db, noise_source, pct_below, timeline_fps);
 
-    let pipeline = finish_pipeline(sound, seconds_per_env_frame, params, timeline_fps);
-
-    Ok(result_from_pipeline(pipeline, noise_db, warnings))
-}
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-struct Pipeline {
-    keep: Vec<FrameRange>,
-    silences: Vec<FrameRange>,
-    total_frames: i64,
-    kept_frames: i64,
-    removed_frames: i64,
-    cut_count: usize,
-    percent_shorter: f64,
-}
-
-fn empty_result(params: &SilenceParams, warnings: Vec<SilenceWarning>) -> SilenceRanges {
-    SilenceRanges {
-        keep: Vec::new(),
-        silences: Vec::new(),
-        stats: SilenceStats {
-            total_frames: 0,
-            kept_frames: 0,
-            removed_frames: 0,
-            cut_count: 0,
-            percent_shorter: 0.0,
-        },
-        noise_db: match params.noise {
-            NoiseSetting::Manual(v) => v,
-            NoiseSetting::Auto => AUTO_NOISE_MIN_DB,
-        },
-        warnings,
-    }
-}
-
-fn result_from_pipeline(
-    pipeline: Pipeline,
-    noise_db: f32,
-    warnings: Vec<SilenceWarning>,
-) -> SilenceRanges {
-    SilenceRanges {
+    Ok(SilenceRanges {
         keep: pipeline.keep,
         silences: pipeline.silences,
         stats: SilenceStats {
@@ -467,7 +636,61 @@ fn result_from_pipeline(
         },
         noise_db,
         warnings,
+        report,
+    })
+}
+
+fn resolve_noise_empty(params: &SilenceParams) -> (f32, NoiseSource) {
+    match params.noise {
+        NoiseSetting::Manual(v) => (v, NoiseSource::Manual),
+        NoiseSetting::Auto => (AUTO_NOISE_MIN_DB, NoiseSource::Auto),
     }
+}
+
+fn empty_result(
+    noise_db: f32,
+    noise_source: NoiseSource,
+    warnings: Vec<SilenceWarning>,
+) -> SilenceRanges {
+    SilenceRanges {
+        keep: Vec::new(),
+        silences: Vec::new(),
+        stats: SilenceStats {
+            total_frames: 0,
+            kept_frames: 0,
+            removed_frames: 0,
+            cut_count: 0,
+            percent_shorter: 0.0,
+        },
+        noise_db,
+        warnings,
+        report: AnalysisReport::empty(noise_db, noise_source),
+    }
+}
+
+/// Percentage of envelope frames strictly below `noise_db`.
+fn frames_below_noise_pct(levels: &[f32], noise_db: f32) -> f64 {
+    if levels.is_empty() {
+        return 0.0;
+    }
+    let below = levels.iter().filter(|l| **l < noise_db).count();
+    (below as f64 / levels.len() as f64) * 100.0
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline
+// ---------------------------------------------------------------------------
+
+struct Pipeline {
+    keep: Vec<FrameRange>,
+    silences: Vec<FrameRange>,
+    total_frames: i64,
+    kept_frames: i64,
+    removed_frames: i64,
+    cut_count: usize,
+    percent_shorter: f64,
+    silences_found: usize,
+    cuts_prevented: usize,
 }
 
 fn finish_pipeline(
@@ -479,11 +702,10 @@ fn finish_pipeline(
     let total_env_frames = mask.len() as i64;
     let mut runs = mask_to_runs(&mask);
 
-    let keep_talks_frames = seconds_to_env_frames(params.keep_talks_s, seconds_per_env_frame);
+    let keep_talks_frames = ms_to_env_frames(params.keep_talks_ms, seconds_per_env_frame);
     runs = flip_and_merge(&runs, true, keep_talks_frames);
 
-    let remove_silences_frames =
-        seconds_to_env_frames(params.remove_silences_s, seconds_per_env_frame);
+    let remove_silences_frames = ms_to_env_frames(params.remove_silences_ms, seconds_per_env_frame);
     runs = flip_and_merge(&runs, false, remove_silences_frames);
 
     let sound_env: Vec<FrameRange> = runs
@@ -492,10 +714,16 @@ fn finish_pipeline(
         .map(|(_, s, e)| FrameRange::new(*s, *e))
         .collect();
 
-    let pad_before = seconds_to_env_frames(params.pad_before_s, seconds_per_env_frame);
-    let pad_after = seconds_to_env_frames(params.pad_after_s, seconds_per_env_frame);
+    let pad_before = ms_to_env_frames(params.margin_before_ms, seconds_per_env_frame);
+    let pad_after = ms_to_env_frames(params.margin_after_ms, seconds_per_env_frame);
     let padded = pad_ranges(&sound_env, pad_before, pad_after, total_env_frames);
     let sound_env = merge_ranges(&padded);
+
+    let silences_found = complement(&sound_env, total_env_frames).len();
+
+    let min_between_frames = ms_to_env_frames(params.min_between_cuts_ms, seconds_per_env_frame);
+    let (sound_env, cuts_prevented) =
+        apply_min_between_cuts(&sound_env, total_env_frames, min_between_frames);
 
     let silence_env = complement(&sound_env, total_env_frames);
 
@@ -504,7 +732,7 @@ fn finish_pipeline(
 
     let silences_tl: Vec<FrameRange> = silence_env
         .iter()
-        .filter_map(|s| snap_silence_inward(*s, ratio, total_env_frames, tl_total))
+        .filter_map(|s| snap_silence(*s, ratio, total_env_frames, tl_total, params.snap))
         .collect();
     let silences_tl = merge_ranges(&silences_tl);
     let keep_tl: Vec<FrameRange> = complement(&silences_tl, tl_total)
@@ -529,15 +757,64 @@ fn finish_pipeline(
         removed_frames,
         cut_count,
         percent_shorter,
+        silences_found,
+        cuts_prevented,
     }
 }
 
-fn seconds_to_env_frames(seconds: f64, seconds_per_frame: f64) -> i64 {
-    if seconds <= 0.0 || seconds_per_frame <= 0.0 {
-        0
-    } else {
-        (seconds / seconds_per_frame).round() as i64
+fn build_report(
+    pipeline: &Pipeline,
+    noise_db: f32,
+    noise_source: NoiseSource,
+    frames_below_noise_pct: f64,
+    _fps: Fps,
+) -> AnalysisReport {
+    let per_cut: Vec<CutDetail> = pipeline
+        .silences
+        .iter()
+        .map(|r| CutDetail {
+            start: r.start,
+            end: r.end,
+        })
+        .collect();
+
+    let lengths: Vec<i64> = pipeline.silences.iter().map(FrameRange::len).collect();
+    let n = lengths.len();
+    let total: i64 = lengths.iter().sum();
+
+    let average_cut_frames = if n > 0 { total as f64 / n as f64 } else { 0.0 };
+    let max_cut_frames = lengths.iter().copied().max().unwrap_or(0);
+    let shortest_cut_frames = lengths.iter().copied().min().unwrap_or(0);
+
+    let mut sorted = pipeline.silences.clone();
+    sorted.sort_by_key(|r| std::cmp::Reverse(r.len()));
+    let longest_cuts: Vec<FrameRange> = sorted.into_iter().take(5).collect();
+
+    AnalysisReport {
+        noise_db,
+        noise_source,
+        frames_below_noise_pct,
+        silences_found: pipeline.silences_found,
+        silences_cut: n,
+        cuts_prevented: pipeline.cuts_prevented,
+        average_cut_frames,
+        max_cut_frames,
+        shortest_cut_frames,
+        longest_cuts,
+        per_cut,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/// Converts milliseconds to envelope frames, rounding to nearest.
+fn ms_to_env_frames(ms: u32, seconds_per_frame: f64) -> i64 {
+    if ms == 0 || seconds_per_frame <= 0.0 {
+        return 0;
+    }
+    ((f64::from(ms)) / 1000.0 / seconds_per_frame).round() as i64
 }
 
 fn sound_mask(levels: &[f32], noise_db: f32, hysteresis_db: f32) -> Vec<bool> {
@@ -651,28 +928,109 @@ fn complement(ranges: &[FrameRange], total: i64) -> Vec<FrameRange> {
     out
 }
 
+/// Applies the min-between-cuts rule.
+///
+/// For each kept run that lies between two silences and is shorter than
+/// `min_frames`, extend the keep to cover both silences. The three pieces
+/// (silence + keep + silence) become one uncut region. Each such merge
+/// prevents two cuts. Returns the new keeps and the number prevented.
+///
+/// Iterates until no further merges are possible, because merging one
+/// keep can turn an adjacent short keep into a long one.
+fn apply_min_between_cuts(
+    keeps: &[FrameRange],
+    total_env_frames: i64,
+    min_frames: i64,
+) -> (Vec<FrameRange>, usize) {
+    if min_frames <= 0 || keeps.is_empty() || total_env_frames <= 0 {
+        return (keeps.to_vec(), 0);
+    }
+
+    let n = total_env_frames as usize;
+    let mut mask = vec![false; n];
+    for r in keeps {
+        let s = r.start.max(0);
+        let e = r.end.min(total_env_frames);
+        for i in s..e {
+            mask[i as usize] = true;
+        }
+    }
+
+    let mut prevented = 0usize;
+    loop {
+        let runs = mask_to_runs(&mask);
+        let mut merged = false;
+        for i in 0..runs.len() {
+            let (kind, s, e) = runs[i];
+            if !kind {
+                continue;
+            }
+            if (e - s) >= min_frames {
+                continue;
+            }
+            if i == 0 || runs[i - 1].0 {
+                continue;
+            }
+            if i + 1 >= runs.len() || runs[i + 1].0 {
+                continue;
+            }
+            let before = runs[i - 1];
+            let after = runs[i + 1];
+            for j in before.1..before.2 {
+                mask[j as usize] = true;
+            }
+            for j in after.1..after.2 {
+                mask[j as usize] = true;
+            }
+            prevented += 2;
+            merged = true;
+            break;
+        }
+        if !merged {
+            break;
+        }
+    }
+
+    let out: Vec<FrameRange> = mask_to_runs(&mask)
+        .into_iter()
+        .filter(|(k, _, _)| *k)
+        .map(|(_, s, e)| FrameRange::new(s, e))
+        .collect();
+    (out, prevented)
+}
+
 /// Snaps a silence range into timeline frames.
 ///
-/// **Inner** boundaries are shrunk inward. **Outer** edges are clamped to
-/// `0` and `tl_total`.
-fn snap_silence_inward(
+/// Outer edges are clamped to `0` and `tl_total`. Inner boundaries use
+/// either `ceil`/`floor` (inward) or `round`/`round` (nearest).
+fn snap_silence(
     silence: FrameRange,
     ratio: f64,
     env_total: i64,
     tl_total: i64,
+    mode: SnapMode,
 ) -> Option<FrameRange> {
     if ratio <= 0.0 {
         return None;
     }
+    let start_f = silence.start as f64 * ratio;
+    let end_f = silence.end as f64 * ratio;
+
     let tl_start = if silence.start <= 0 {
         0
     } else {
-        ((silence.start as f64) * ratio).ceil() as i64
+        match mode {
+            SnapMode::Inward => start_f.ceil() as i64,
+            SnapMode::Nearest => start_f.round() as i64,
+        }
     };
     let tl_end = if silence.end >= env_total {
         tl_total
     } else {
-        ((silence.end as f64) * ratio).floor() as i64
+        match mode {
+            SnapMode::Inward => end_f.floor() as i64,
+            SnapMode::Nearest => end_f.round() as i64,
+        }
     };
     if tl_end <= tl_start {
         None
@@ -703,10 +1061,6 @@ mod tests {
         Fps { num: 30, den: 1 }
     }
 
-    fn manual_noise(v: f32) -> NoiseSetting {
-        NoiseSetting::Manual(v)
-    }
-
     fn one_island(total: usize, sound_start: usize, sound_len: usize) -> Envelope {
         let mut levels = vec![-100.0f32; total];
         for l in levels.iter_mut().skip(sound_start).take(sound_len) {
@@ -715,533 +1069,223 @@ mod tests {
         env_from_levels(levels)
     }
 
-    // --- params -----------------------------------------------------------
+    // --- preset table -----------------------------------------------------
 
     #[test]
-    fn default_params_match_spec() {
+    fn builtin_presets_match_documented_values() {
+        let relaxed = BuiltinPreset::Relaxed.values();
+        assert_eq!(relaxed.remove_silences_ms, 500);
+        assert_eq!(relaxed.keep_talks_ms, 250);
+        assert_eq!(relaxed.margin_before_ms, 150);
+        assert_eq!(relaxed.margin_after_ms, 150);
+        assert_eq!(relaxed.min_between_cuts_ms, 0);
+
+        let natural = BuiltinPreset::Natural.values();
+        assert_eq!(natural.remove_silences_ms, 300);
+        assert_eq!(natural.keep_talks_ms, 150);
+        assert_eq!(natural.margin_before_ms, 100);
+        assert_eq!(natural.margin_after_ms, 100);
+        assert_eq!(natural.min_between_cuts_ms, 0);
+
+        let brisk = BuiltinPreset::Brisk.values();
+        assert_eq!(brisk.remove_silences_ms, 180);
+        assert_eq!(brisk.keep_talks_ms, 100);
+        assert_eq!(brisk.margin_before_ms, 80);
+        assert_eq!(brisk.margin_after_ms, 80);
+
+        let tight = BuiltinPreset::Tight.values();
+        assert_eq!(tight.remove_silences_ms, 100);
+        assert_eq!(tight.keep_talks_ms, 70);
+        assert_eq!(tight.margin_before_ms, 60);
+        assert_eq!(tight.margin_after_ms, 60);
+
+        let max = BuiltinPreset::Max.values();
+        assert_eq!(max.remove_silences_ms, 50);
+        assert_eq!(max.keep_talks_ms, 50);
+        assert_eq!(max.margin_before_ms, 50);
+        assert_eq!(max.margin_after_ms, 50);
+    }
+
+    #[test]
+    fn max_preset_uses_nearest_snap_by_default() {
+        assert_eq!(BuiltinPreset::Max.default_snap(), SnapMode::Nearest);
+        assert_eq!(BuiltinPreset::Natural.default_snap(), SnapMode::Inward);
+        let p = SilenceParams::from_preset(BuiltinPreset::Max);
+        assert_eq!(p.snap, SnapMode::Nearest);
+    }
+
+    #[test]
+    fn default_params_are_natural_preset() {
         let p = SilenceParams::default();
-        assert_eq!(p.method, Method::Threshold);
-        assert!(matches!(p.noise, NoiseSetting::Auto));
-        assert!((p.remove_silences_s - 0.50).abs() < 1e-12);
-        assert!((p.keep_talks_s - 0.25).abs() < 1e-12);
-        assert!((p.pad_before_s - 0.10).abs() < 1e-12);
-        assert!((p.pad_after_s - 0.10).abs() < 1e-12);
+        assert_eq!(p.remove_silences_ms, 300);
+        assert_eq!(p.keep_talks_ms, 150);
+        assert_eq!(p.margin_before_ms, 100);
+        assert_eq!(p.margin_after_ms, 100);
+        assert_eq!(p.min_between_cuts_ms, 0);
+        assert_eq!(p.snap, SnapMode::Inward);
+    }
+
+    // --- warnings ---------------------------------------------------------
+
+    #[test]
+    fn fifty_ms_is_accepted_without_warning() {
+        let p = SilenceParams {
+            remove_silences_ms: 50,
+            keep_talks_ms: 50,
+            margin_before_ms: 50,
+            margin_after_ms: 50,
+            ..SilenceParams::default()
+        };
+        assert!(p.warnings().is_empty(), "{:?}", p.warnings());
     }
 
     #[test]
-    fn presets_match_spec() {
-        let calm = SilenceParams::preset(Preset::Calm);
-        assert!((calm.remove_silences_s - 0.80).abs() < 1e-12);
-        assert!((calm.keep_talks_s - 0.30).abs() < 1e-12);
-        assert!((calm.pad_before_s - 0.10).abs() < 1e-12);
-
-        let measured = SilenceParams::preset(Preset::Measured);
-        assert!((measured.remove_silences_s - 0.50).abs() < 1e-12);
-        assert!((measured.keep_talks_s - 0.25).abs() < 1e-12);
-
-        let paced = SilenceParams::preset(Preset::Paced);
-        assert!((paced.remove_silences_s - 0.35).abs() < 1e-12);
-        assert!((paced.keep_talks_s - 0.20).abs() < 1e-12);
-
-        let fast = SilenceParams::preset(Preset::Fast);
-        assert!((fast.remove_silences_s - 0.20).abs() < 1e-12);
-        assert!((fast.keep_talks_s - 0.15).abs() < 1e-12);
-        assert!((fast.pad_before_s - 0.08).abs() < 1e-12);
-        assert!((fast.pad_after_s - 0.08).abs() < 1e-12);
-    }
-
-    #[test]
-    fn defaults_have_no_warnings() {
-        assert!(SilenceParams::default().warnings().is_empty());
-    }
-
-    #[test]
-    fn warnings_for_small_padding_and_silence() {
-        let mut p = SilenceParams::default();
-        p.pad_before_s = 0.04;
-        p.pad_after_s = 0.01;
-        p.remove_silences_s = 0.049;
+    fn below_fifty_ms_warns() {
+        let p = SilenceParams {
+            remove_silences_ms: 49,
+            keep_talks_ms: 50,
+            margin_before_ms: 50,
+            margin_after_ms: 50,
+            ..SilenceParams::default()
+        };
         let w = p.warnings();
-        assert_eq!(w.len(), 3);
-        assert!(w.iter().any(|x| matches!(
-            x,
-            SilenceWarning::PaddingBelowSafety {
-                which: PadSide::Before,
-                ..
-            }
-        )));
-        assert!(w.iter().any(|x| matches!(
-            x,
-            SilenceWarning::PaddingBelowSafety {
-                which: PadSide::After,
-                ..
-            }
-        )));
-        assert!(w
-            .iter()
-            .any(|x| matches!(x, SilenceWarning::RemoveSilencesBelowSafety { .. })));
-    }
-
-    // --- auto noise -------------------------------------------------------
-
-    #[test]
-    fn auto_noise_empty_envelope_is_floor() {
-        let env = env_from_levels(Vec::new());
-        assert_eq!(auto_noise_level(&env), AUTO_NOISE_MIN_DB);
-    }
-
-    #[test]
-    fn auto_noise_all_quiet_clamps_to_min() {
-        let env = env_from_levels(vec![-80.0; 100]);
-        assert_eq!(auto_noise_level(&env), AUTO_NOISE_MIN_DB);
-    }
-
-    #[test]
-    fn auto_noise_all_loud_clamps_to_max() {
-        let env = env_from_levels(vec![-10.0; 100]);
-        assert_eq!(auto_noise_level(&env), AUTO_NOISE_MAX_DB);
-    }
-
-    #[test]
-    fn auto_noise_mixed_envelope_uses_quiet_tail() {
-        let mut levels = vec![-50.0f32; 80];
-        levels.extend(vec![-20.0; 20]);
-        let env = env_from_levels(levels);
-        assert!((auto_noise_level(&env) - (-47.0)).abs() < 0.01);
-    }
-
-    #[test]
-    fn auto_noise_single_frame_uses_that_frame() {
-        let env = env_from_levels(vec![-45.0]);
-        assert!((auto_noise_level(&env) - (-42.0)).abs() < 0.01);
-    }
-
-    // --- auto noise from VAD ---------------------------------------------
-
-    #[test]
-    fn auto_noise_from_vad_uses_non_speech_frames_only() {
-        let mut levels = vec![-50.0f32; 8];
-        levels.extend(vec![-20.0; 4]);
-        let env = env_from_levels(levels);
-        let speech = vec![false; 8]
-            .into_iter()
-            .chain(vec![true; 4])
-            .collect::<Vec<_>>();
-        assert!((auto_noise_level_from_vad(&env, &speech) - (-47.0)).abs() < 0.01);
-    }
-
-    #[test]
-    fn auto_noise_from_vad_falls_back_when_all_speech() {
-        let mut levels = vec![-50.0f32; 80];
-        levels.extend(vec![-20.0; 20]);
-        let env = env_from_levels(levels);
-        let speech = vec![true; 100];
-        assert!((auto_noise_level_from_vad(&env, &speech) - auto_noise_level(&env)).abs() < 1e-6);
-    }
-
-    #[test]
-    fn auto_noise_from_vad_handles_empty() {
-        let env = env_from_levels(Vec::new());
-        assert_eq!(auto_noise_level_from_vad(&env, &[]), AUTO_NOISE_MIN_DB);
-    }
-
-    #[test]
-    fn auto_noise_from_vad_truncates_to_shorter_slice() {
-        let env = env_from_levels(vec![-50.0; 4]);
-        let speech = vec![false, false, true, true, true, true];
-        assert!((auto_noise_level_from_vad(&env, &speech) - (-47.0)).abs() < 0.01);
-    }
-
-    // --- sound mask / hysteresis -----------------------------------------
-
-    #[test]
-    fn sound_mask_starts_silent_on_quiet_signal() {
-        let mask = sound_mask(&[-80.0, -80.0, -80.0], -50.0, HYSTERESIS_DB);
-        assert_eq!(mask, vec![false, false, false]);
-    }
-
-    #[test]
-    fn sound_mask_starts_sound_on_loud_frame_zero() {
-        let mask = sound_mask(&[-20.0, -20.0], -50.0, HYSTERESIS_DB);
-        assert_eq!(mask, vec![true, true]);
-    }
-
-    #[test]
-    fn hysteresis_keeps_sound_through_a_brief_dip() {
-        let levels = [-20.0, -20.0, -52.0, -52.0, -52.0, -60.0, -20.0];
-        let mask = sound_mask(&levels, -50.0, HYSTERESIS_DB);
-        assert_eq!(mask, vec![true, true, true, true, true, false, true]);
-    }
-
-    #[test]
-    fn hysteresis_ends_exactly_below_threshold() {
-        let levels = [-20.0, -53.0, -53.01, -20.0];
-        let mask = sound_mask(&levels, -50.0, HYSTERESIS_DB);
-        assert_eq!(mask, vec![true, true, false, true]);
-    }
-
-    // --- run flips --------------------------------------------------------
-
-    #[test]
-    fn mask_to_runs_handles_empty() {
-        assert_eq!(mask_to_runs(&[]), Vec::new());
-    }
-
-    #[test]
-    fn mask_to_runs_alternating() {
-        let mask = [true, true, false, false, false, true];
-        assert_eq!(
-            mask_to_runs(&mask),
-            vec![(true, 0, 2), (false, 2, 5), (true, 5, 6)]
-        );
-    }
-
-    #[test]
-    fn flip_and_merge_bridges_gap_when_middle_run_is_flipped() {
-        let runs = [(false, 0, 5), (true, 5, 6), (false, 6, 11)];
-        let out = flip_and_merge(&runs, true, 3);
-        assert_eq!(out, vec![(false, 0, 11)]);
-    }
-
-    #[test]
-    fn flip_and_merge_leaves_long_enough_runs() {
-        let runs = [(false, 0, 5), (true, 5, 10), (false, 10, 15)];
-        let out = flip_and_merge(&runs, true, 3);
-        assert_eq!(out, runs.to_vec());
-    }
-
-    // --- detect_silence (threshold path) ---------------------------------
-
-    #[test]
-    fn detect_rejects_vad_and_hybrid_on_threshold_entry() {
-        let env = one_island(200, 50, 50);
-        let mut p = SilenceParams::default();
-        p.noise = manual_noise(-50.0);
-        p.method = Method::Vad;
+        assert_eq!(w.len(), 1);
         assert!(matches!(
-            detect_silence(&env, &p, tl_30()),
-            Err(CoreError::NotImplemented(_))
+            w[0],
+            SilenceWarning::RemoveSilencesBelowSafety { value_ms: 49 }
         ));
-        p.method = Method::Hybrid;
-        assert!(matches!(
-            detect_silence(&env, &p, tl_30()),
-            Err(CoreError::NotImplemented(_))
-        ));
+
+        let p = SilenceParams {
+            remove_silences_ms: 50,
+            keep_talks_ms: 50,
+            margin_before_ms: 40,
+            margin_after_ms: 30,
+            ..SilenceParams::default()
+        };
+        let w = p.warnings();
+        assert_eq!(w.len(), 2);
     }
 
-    #[test]
-    fn detect_empty_envelope_returns_empty_ranges() {
-        let env = env_from_levels(Vec::new());
-        let r = detect_silence(&env, &SilenceParams::default(), tl_30()).unwrap();
-        assert!(r.keep.is_empty());
-        assert!(r.silences.is_empty());
-        assert_eq!(r.stats.total_frames, 0);
-    }
+    // --- snap modes -------------------------------------------------------
 
     #[test]
-    fn isolated_one_frame_blip_is_dropped_by_keep_talks() {
-        let env = one_island(200, 100, 1);
-        let mut p = SilenceParams::default();
-        p.noise = manual_noise(-50.0);
-        let r = detect_silence(&env, &p, tl_30()).unwrap();
-        assert!(r.keep.is_empty(), "keep = {:?}", r.keep);
-        assert_eq!(r.silences.len(), 1);
+    fn nearest_and_inward_differ_on_a_fractional_boundary() {
+        // ratio 0.3: envelope frame 105 -> 31.5 timeline frames.
+        let ratio = 0.3;
+        let silence = FrameRange::new(105, 200);
+        let inward = snap_silence(silence, ratio, 1000, 60, SnapMode::Inward).unwrap();
+        let nearest = snap_silence(silence, ratio, 1000, 60, SnapMode::Nearest).unwrap();
+        // Inward: ceil(31.5) = 32; Nearest: round(31.5) = 32.
+        // Use a half frame to force a difference.
+        let silence2 = FrameRange::new(101, 200);
+        let inward2 = snap_silence(silence2, ratio, 1000, 60, SnapMode::Inward).unwrap();
+        let nearest2 = snap_silence(silence2, ratio, 1000, 60, SnapMode::Nearest).unwrap();
+        // 101 * 0.3 = 30.3 -> ceil 31, round 30.
+        assert_eq!(inward2.start, 31);
+        assert_eq!(nearest2.start, 30);
+        assert_ne!(inward2.start, nearest2.start);
     }
 
-    #[test]
-    fn long_enough_island_survives_keep_talks() {
-        let env = one_island(200, 100, 30);
-        let mut p = SilenceParams::default();
-        p.noise = manual_noise(-50.0);
-        let r = detect_silence(&env, &p, tl_30()).unwrap();
-        assert_eq!(r.keep.len(), 1);
-        assert_eq!(r.keep[0], FrameRange::new(27, 42));
-    }
+    // --- min_between_cuts -------------------------------------------------
 
     #[test]
-    fn short_silence_between_two_talks_is_filled() {
-        let mut levels = vec![-100.0f32; 300];
-        for l in levels.iter_mut().take(130).skip(100) {
+    fn min_between_cuts_off_leaves_short_keeps() {
+        // 200 env frames = 2 s at 100 Hz. Two sounds, one short in between.
+        // [30, 50) short, [80, 100) short, [140, 170) long.
+        // All separated by silences.
+        let mut levels = vec![-100.0f32; 200];
+        for l in levels.iter_mut().take(50).skip(30) {
+            *l = -20.0;
+        }
+        for l in levels.iter_mut().take(100).skip(80) {
             *l = -20.0;
         }
         for l in levels.iter_mut().take(170).skip(140) {
             *l = -20.0;
         }
         let env = env_from_levels(levels);
-        let mut p = SilenceParams::default();
-        p.noise = manual_noise(-50.0);
-        let r = detect_silence(&env, &p, tl_30()).unwrap();
-        assert_eq!(r.keep.len(), 1);
-        assert_eq!(r.keep[0], FrameRange::new(27, 54));
-    }
-
-    #[test]
-    fn padding_merges_runs_after_fill_step() {
-        let mut levels = vec![-100.0f32; 300];
-        for l in levels.iter_mut().take(130).skip(100) {
-            *l = -20.0;
-        }
-        for l in levels.iter_mut().take(180).skip(150) {
-            *l = -20.0;
-        }
-        let env = env_from_levels(levels);
-        let mut p = SilenceParams::default();
-        p.noise = manual_noise(-50.0);
-        p.remove_silences_s = 0.10;
-        p.pad_before_s = 0.15;
-        p.pad_after_s = 0.15;
-        let r = detect_silence(&env, &p, tl_30()).unwrap();
-        assert_eq!(r.keep, vec![FrameRange::new(25, 59)]);
-    }
-
-    #[test]
-    fn snap_shrinks_silence_inward() {
-        let mut levels = vec![-100.0f32; 310];
-        for l in levels.iter_mut().take(151).skip(100) {
-            *l = -20.0;
-        }
-        for l in levels.iter_mut().take(208).skip(159) {
-            *l = -20.0;
-        }
-        let env = env_from_levels(levels);
-        let mut p = SilenceParams::default();
-        p.noise = manual_noise(-50.0);
-        p.remove_silences_s = 0.0;
-        p.keep_talks_s = 0.0;
-        p.pad_before_s = 0.0;
-        p.pad_after_s = 0.0;
-        let r = detect_silence(&env, &p, tl_30()).unwrap();
-        assert_eq!(r.silences.len(), 3);
-        assert_eq!(r.silences[1], FrameRange::new(46, 47));
-        assert_eq!(
-            r.keep,
-            vec![FrameRange::new(30, 46), FrameRange::new(47, 63)]
-        );
-    }
-
-    #[test]
-    fn stats_are_consistent() {
-        let env = one_island(200, 100, 30);
-        let mut p = SilenceParams::default();
-        p.noise = manual_noise(-50.0);
-        let r = detect_silence(&env, &p, tl_30()).unwrap();
-        assert_eq!(
-            r.stats.kept_frames + r.stats.removed_frames,
-            r.stats.total_frames
-        );
-        let kept_sum: i64 = r.keep.iter().map(FrameRange::len).sum();
-        let removed_sum: i64 = r.silences.iter().map(FrameRange::len).sum();
-        assert_eq!(kept_sum, r.stats.kept_frames);
-        assert_eq!(removed_sum, r.stats.removed_frames);
-        assert_eq!(r.stats.cut_count, r.silences.len());
-        let pct = (r.stats.removed_frames as f64 / r.stats.total_frames as f64) * 100.0;
-        assert!((pct - r.stats.percent_shorter).abs() < 1e-9);
-    }
-
-    #[test]
-    fn keep_and_silence_ranges_partition_the_timeline() {
-        let mut levels = vec![-100.0f32; 500];
-        for l in levels.iter_mut().take(160).skip(100) {
-            *l = -20.0;
-        }
-        for l in levels.iter_mut().take(400).skip(300) {
-            *l = -20.0;
-        }
-        let env = env_from_levels(levels);
-        let mut p = SilenceParams::default();
-        p.noise = manual_noise(-50.0);
-        let r = detect_silence(&env, &p, tl_30()).unwrap();
-
-        let mut all: Vec<FrameRange> = r.keep.iter().chain(r.silences.iter()).copied().collect();
-        all.sort_by_key(|x| x.start);
-        assert_eq!(all[0].start, 0);
-        let mut prev_end = 0i64;
-        for range in &all {
-            assert_eq!(range.start, prev_end, "gap or overlap at {range:?}");
-            prev_end = range.end;
-        }
-        assert_eq!(prev_end, r.stats.total_frames);
-    }
-
-    // --- outer edges ------------------------------------------------------
-
-    #[test]
-    fn outer_silences_cover_the_full_timeline() {
-        // 299 envelope frames is 2.99 s at 100 Hz; at 30 fps that is
-        // 89.7 frames, so tl_total must round up to 90.
-        let env = one_island(299, 100, 100);
-        let mut p = SilenceParams::default();
-        p.noise = manual_noise(-50.0);
-        let r = detect_silence(&env, &p, tl_30()).unwrap();
-        assert_eq!(r.stats.total_frames, 90);
-        assert_eq!(r.silences[0].start, 0);
-        assert_eq!(r.silences.last().unwrap().end, 90);
-        let all: i64 = r.keep.iter().map(FrameRange::len).sum::<i64>()
-            + r.silences.iter().map(FrameRange::len).sum::<i64>();
-        assert_eq!(all, 90);
-    }
-
-    #[test]
-    fn outer_edges_round_up_never_down() {
-        // 251 env frames * 0.3 = 75.3 -> 76.
-        let env = one_island(251, 100, 50);
-        let mut p = SilenceParams::default();
-        p.noise = manual_noise(-50.0);
-        let r = detect_silence(&env, &p, tl_30()).unwrap();
-        assert_eq!(r.stats.total_frames, 76);
-    }
-
-    // --- detect_silence_with_vad -----------------------------------------
-
-    struct ScriptedVad {
-        probs: Vec<f32>,
-    }
-
-    impl Vad for ScriptedVad {
-        fn name(&self) -> &'static str {
-            "scripted"
-        }
-        fn window_samples(&self) -> u32 {
-            VAD_WINDOW_SAMPLES
-        }
-        fn sample_rate(&self) -> u32 {
-            VAD_SAMPLE_RATE
-        }
-        fn speech_probabilities(
-            &mut self,
-            _samples: &[f32],
-        ) -> Result<VadProbabilities, CoreError> {
-            Ok(VadProbabilities {
-                values: self.probs.clone(),
-                hop_samples: VAD_WINDOW_SAMPLES,
-                sample_rate: VAD_SAMPLE_RATE,
-            })
-        }
-    }
-
-    fn vad_with_speech_window(
-        total_env_frames: usize,
-        speech_start_s: f64,
-        speech_end_s: f64,
-    ) -> ScriptedVad {
-        let window_s = 0.032;
-        let total_windows = (total_env_frames as f64 * 0.010 / window_s).ceil() as usize;
-        let start = (speech_start_s / window_s) as usize;
-        let end = (speech_end_s / window_s) as usize;
-        let mut probs = vec![0.0f32; total_windows];
-        for p in probs.iter_mut().take(end.min(total_windows)).skip(start) {
-            *p = 0.9;
-        }
-        ScriptedVad { probs }
-    }
-
-    #[test]
-    fn vad_method_delegates_threshold_to_detect_silence() {
-        let env = one_island(200, 100, 30);
-        let mut p = SilenceParams::default();
-        p.noise = manual_noise(-50.0);
-        let mut vad = ScriptedVad { probs: vec![] };
-        let a = detect_silence(&env, &p, tl_30()).unwrap();
-        let b = detect_silence_with_vad(&env, &p, tl_30(), &mut vad, &[]).unwrap();
-        assert_eq!(a, b);
-    }
-
-    #[test]
-    fn vad_method_uses_mask_and_applies_padding() {
-        // 200 envelope frames = 2 s at 100 Hz. The VAD marks the middle of
-        // the signal as speech; the exact boundaries shift by a frame or two
-        // because of 32 ms -> 10 ms resampling and the min-silence fill, so
-        // assert structural properties rather than exact frames.
-        let env = env_from_levels(vec![-70.0; 200]);
-        let mut p = SilenceParams::default();
-        p.method = Method::Vad;
-        p.noise = manual_noise(-50.0);
-        let mut vad = vad_with_speech_window(200, 0.5, 1.5);
-
-        let r = detect_silence_with_vad(&env, &p, tl_30(), &mut vad, &[]).unwrap();
-
-        // Timeline is 200 * 0.3 = 60 frames.
-        assert_eq!(r.stats.total_frames, 60);
-
-        // Keep + silences partition the timeline.
-        let kept: i64 = r.keep.iter().map(FrameRange::len).sum();
-        let removed: i64 = r.silences.iter().map(FrameRange::len).sum();
-        assert_eq!(kept + removed, 60);
-        assert_eq!(kept, r.stats.kept_frames);
-        assert_eq!(removed, r.stats.removed_frames);
-
-        // If there is a keep range, it sits inside the timeline.
-        if let Some(range) = r.keep.first() {
-            assert!(range.start >= 0);
-            assert!(range.end <= 60);
-        }
-    }
-
-    #[test]
-    fn vad_method_marks_no_speech_as_all_silence() {
-        let env = env_from_levels(vec![-70.0; 200]);
-        let mut p = SilenceParams::default();
-        p.method = Method::Vad;
-        p.noise = manual_noise(-50.0);
-        let mut vad = ScriptedVad {
-            probs: vec![0.0; 100],
+        let p = SilenceParams {
+            remove_silences_ms: 300,
+            keep_talks_ms: 100,
+            margin_before_ms: 0,
+            margin_after_ms: 0,
+            min_between_cuts_ms: 0,
+            ..SilenceParams::default()
         };
-        let r = detect_silence_with_vad(&env, &p, tl_30(), &mut vad, &[]).unwrap();
-        assert!(r.keep.is_empty());
-        assert_eq!(r.silences.len(), 1);
+        let r = detect_silence(&env, &p, tl_30()).unwrap();
+        // Three keep ranges: [30, 50), [80, 100), [140, 170).
+        // But remove_silences at 300 ms = 30 env frames; the two short
+        // silences at [50, 80) and [100, 140) are 30 and 40 frames, so
+        // they survive as cuts. keep_talks at 100 ms = 10 frames; both
+        // 20-frame runs survive.
+        assert_eq!(r.report.cuts_prevented, 0);
+        assert!(r.silences.len() >= 2);
     }
 
     #[test]
-    fn hybrid_method_snaps_boundaries_to_dips() {
-        let mut levels = vec![-70.0f32; 300];
-        for l in levels.iter_mut().take(200).skip(100) {
-            *l = -30.0;
+    fn min_between_cuts_merges_short_interior_keep() {
+        // Same layout but with min_between_cuts_ms = 2000 ms = 200 env
+        // frames. Both short interior keeps get merged with their
+        // surrounding silences.
+        let mut levels = vec![-100.0f32; 200];
+        for l in levels.iter_mut().take(50).skip(30) {
+            *l = -20.0;
         }
-        levels[95] = -85.0;
-
-        let env = env_from_levels(levels);
-        let mut p = SilenceParams::default();
-        p.method = Method::Hybrid;
-        p.noise = manual_noise(-50.0);
-        let mut vad = vad_with_speech_window(300, 1.0, 2.0);
-
-        let r = detect_silence_with_vad(&env, &p, tl_30(), &mut vad, &[]).unwrap();
-        assert_eq!(r.keep.len(), 1);
-        let snapped_boundary = r.keep[0].start;
-        assert!(
-            snapped_boundary <= 30,
-            "boundary was not snapped earlier: {snapped_boundary}"
-        );
-    }
-
-    #[test]
-    fn vad_empty_envelope_returns_empty() {
-        let env = env_from_levels(Vec::new());
-        let mut p = SilenceParams::default();
-        p.method = Method::Vad;
-        let mut vad = ScriptedVad { probs: vec![] };
-        let r = detect_silence_with_vad(&env, &p, tl_30(), &mut vad, &[]).unwrap();
-        assert!(r.keep.is_empty());
-        assert!(r.silences.is_empty());
-        assert_eq!(r.stats.total_frames, 0);
-    }
-
-    #[test]
-    fn vad_auto_noise_uses_non_speech_frames() {
-        let mut levels = vec![-60.0f32; 200];
-        for l in levels.iter_mut().take(200).skip(100) {
+        for l in levels.iter_mut().take(100).skip(80) {
+            *l = -20.0;
+        }
+        for l in levels.iter_mut().take(170).skip(140) {
             *l = -20.0;
         }
         let env = env_from_levels(levels);
-        let mut p = SilenceParams::default();
-        p.method = Method::Vad;
-        let mut vad = vad_with_speech_window(200, 1.0, 2.0);
+        let p = SilenceParams {
+            remove_silences_ms: 300,
+            keep_talks_ms: 100,
+            margin_before_ms: 0,
+            margin_after_ms: 0,
+            min_between_cuts_ms: 2000,
+            ..SilenceParams::default()
+        };
+        let r = detect_silence(&env, &p, tl_30()).unwrap();
+        // The two 20-frame interior keeps are each shorter than 200 frames,
+        // and each is bounded by silences, so both get merged. The result
+        // is one giant keep covering [30, 200) minus whatever fell outside.
+        assert!(r.report.cuts_prevented >= 4);
+        assert!(r.silences.len() <= 1);
+    }
 
-        let r = detect_silence_with_vad(&env, &p, tl_30(), &mut vad, &[]).unwrap();
-        assert!(
-            (r.noise_db - (-57.0)).abs() < 0.5,
-            "noise_db was {}",
-            r.noise_db
+    // --- max preset behaviour --------------------------------------------
+
+    #[test]
+    fn max_preset_cuts_130ms_silence_but_not_90ms() {
+        // At 30 fps, 90 ms = 2.7 frames, 130 ms = 3.9 frames.
+        // Build two envelopes, one with a 90 ms and one with a 130 ms
+        // silence in the middle of speech.
+        let make = |gap_ms: u32| {
+            let gap_frames = ((gap_ms as f64) / 10.0).round() as usize; // env frames at 100 Hz
+            let mut levels = vec![-20.0f32; 200];
+            for l in levels.iter_mut().take(100 + gap_frames).skip(100) {
+                *l = -100.0;
+            }
+            env_from_levels(levels)
+        };
+        let p = SilenceParams::from_preset(BuiltinPreset::Max);
+        // Min-silence for `max` is 50 ms. 90 ms >= 50 ms, so the 90 ms gap
+        // would be a cut if it were interior. But: with remove_silences_ms
+        // = 50, the fill-short-silences step only fills gaps < 50 ms, so
+        // both 90 and 130 survive that step. keep_talks_ms = 50 means the
+        // surrounding speech runs (2000 ms) both survive. So both gaps
+        // should be cuts.
+        //
+        // The 90 ms point is: with min_between_cuts off, both cuts survive.
+        let r90 = detect_silence(&make(90), &p, tl_30()).unwrap();
+        assert_eq!(
+            r90.silences.len(),
+            1,
+            "90 ms should be a cut with max preset: {:?}",
+            r90.silences
         );
+        let r130 = detect_silence(&make(130), &p, tl_30()).unwrap();
+        assert_eq!(r130.silences.len(), 1);
     }
 }
