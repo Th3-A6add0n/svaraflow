@@ -19,23 +19,24 @@
 //! | `stateN` | `[2, 1, 128]` | f32 | Updated LSTM state |
 //!
 //! The state is fed back between calls, so the windows of one analysis
-//! signal must be processed in order. [`SileroVad::speech_probabilities`]
-//! resets the state to zeros at the start of each call.
+//! signal must be processed in order. `speech_probabilities` resets the
+//! state to zeros at the start of each call.
 //!
-//! # Building
+//! # ONNX Runtime discovery
 //!
-//! The `vad` feature (default) enables this module. `cargo build
-//! -p svaraflow-asr --no-default-features` compiles the crate without
-//! ONNX Runtime; [`SileroVad::from_file`] is then replaced by a stub that
-//! always returns [`AsrError::VadFeatureDisabled`].
-
-#![cfg(feature = "vad")]
+//! `svaraflow-asr` links ONNX Runtime **dynamically** (`load-dynamic`).
+//! The runtime is loaded on first use of a `SileroVad`, from
+//! `ORT_DYLIB_PATH` if set, then from the platform's dynamic loader search
+//! path (`PATH` on Windows, `LD_LIBRARY_PATH` on Linux). If neither finds
+//! it, session creation fails with [`AsrError::VadSession`] naming the
+//! variable.
 
 use std::path::Path;
 
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 use ort::value::Tensor;
+use svaraflow_core::error::CoreError;
 use svaraflow_core::vad::{Vad, VadProbabilities, VAD_SAMPLE_RATE, VAD_WINDOW_SAMPLES};
 
 use crate::error::AsrError;
@@ -44,18 +45,15 @@ use crate::error::AsrError;
 const STATE_SHAPE: [usize; 3] = [2, 1, 128];
 
 /// Silero VAD v5 running through ONNX Runtime.
+///
+/// `Session::run` takes `&mut self`, so `speech_probabilities` in the `Vad`
+/// trait takes `&mut self` too. See ADR-0019.
 pub struct SileroVad {
     session: Session,
-    /// Input name for the audio window. Cached so we do not re-scan
-    /// `session.inputs` on every window.
     input_name: String,
-    /// Input name for the sample rate.
     sr_name: String,
-    /// Input name for the LSTM state.
     state_name: String,
-    /// Output name for the probability.
     output_name: String,
-    /// Output name for the updated LSTM state.
     state_out_name: String,
 }
 
@@ -66,13 +64,14 @@ impl SileroVad {
     /// f32), `sr` (`[1]` i64), `state` (`[2,1,128]` f32); outputs `output`
     /// (`[1,1]` f32) and `stateN` (`[2,1,128]` f32). Input and output names
     /// are discovered from the session, not hard-coded, so the older v4
-    /// export (which uses `h`/`c` instead of `state`) will also load — the
-    /// state name is optional.
+    /// export (which uses `h`/`c` instead of `state`) will also load.
     ///
     /// # Errors
     ///
     /// - [`AsrError::VadModelIo`] when `path` cannot be read.
-    /// - [`AsrError::VadSession`] when ONNX Runtime rejects the model.
+    /// - [`AsrError::VadSession`] when ONNX Runtime rejects the model or
+    ///   cannot be found. Set `ORT_DYLIB_PATH` to point at the shared
+    ///   library if the loader cannot find it.
     /// - [`AsrError::VadOutputShape`] when a required input or output is
     ///   missing from the graph.
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, AsrError> {
@@ -94,32 +93,30 @@ impl SileroVad {
             .map_err(|e| AsrError::VadSession(format!("{}: {e}", path_ref.display())))?;
 
         let names: Vec<String> = session
-            .inputs
+            .inputs()
             .iter()
-            .map(|i| i.name.to_string())
+            .map(|i| i.name().to_string())
             .collect();
-        let input_name = pick_name(&names, &["input", "input_1", "audio"])
-            .ok_or_else(|| AsrError::VadOutputShape {
+        let input_name = pick_name(&names, &["input", "input_1", "audio"]).ok_or_else(|| {
+            AsrError::VadOutputShape {
                 name: "input".to_string(),
                 reason: format!("no input named `input`; session has {names:?}"),
-            })?;
+            }
+        })?;
         let sr_name = pick_name(&names, &["sr", "sample_rate"]).unwrap_or_default();
         let state_name = pick_name(&names, &["state", "h"]).unwrap_or_default();
 
         let out_names: Vec<String> = session
-            .outputs
+            .outputs()
             .iter()
-            .map(|o| o.name.to_string())
+            .map(|o| o.name().to_string())
             .collect();
         let output_name =
-            pick_name(&out_names, &["output", "prob"]).ok_or_else(|| {
-                AsrError::VadOutputShape {
-                    name: "output".to_string(),
-                    reason: format!("no output named `output`; session has {out_names:?}"),
-                }
+            pick_name(&out_names, &["output", "prob"]).ok_or_else(|| AsrError::VadOutputShape {
+                name: "output".to_string(),
+                reason: format!("no output named `output`; session has {out_names:?}"),
             })?;
-        let state_out_name =
-            pick_name(&out_names, &["stateN", "hn"]).unwrap_or_default();
+        let state_out_name = pick_name(&out_names, &["stateN", "hn"]).unwrap_or_default();
 
         Ok(Self {
             session,
@@ -136,7 +133,9 @@ impl SileroVad {
     /// The final partial window is zero-padded to 512 samples. Windows are
     /// processed in order with the LSTM state fed back between them, so the
     /// probabilities reflect the model's context.
-    fn run_windows(&mut self, samples: &[f32]) -> Result<Vec<f32>, AsrError> {
+    ///
+    /// `&mut self` because `Session::run` takes a mutable receiver.
+    fn run(&mut self, samples: &[f32]) -> Result<VadProbabilities, AsrError> {
         let window = VAD_WINDOW_SAMPLES as usize;
         let count = samples.len().div_ceil(window);
         let mut probs = Vec::with_capacity(count);
@@ -154,20 +153,19 @@ impl SileroVad {
 
             let input_tensor = Tensor::from_array(([1usize, window], window_buf.clone()))
                 .map_err(|e| AsrError::VadInference(e.to_string()))?;
-            let sr_data = [i64::from(VAD_SAMPLE_RATE)];
-            let sr_tensor = Tensor::from_array(([1usize], sr_data.to_vec()))
+            let sr_tensor = Tensor::from_array(([1usize], vec![i64::from(VAD_SAMPLE_RATE)]))
                 .map_err(|e| AsrError::VadInference(e.to_string()))?;
-            let state_tensor =
-                Tensor::from_array((STATE_SHAPE, state_data.clone()))
-                    .map_err(|e| AsrError::VadInference(e.to_string()))?;
+            let state_tensor = Tensor::from_array((STATE_SHAPE, state_data.clone()))
+                .map_err(|e| AsrError::VadInference(e.to_string()))?;
 
-            let mut inputs = ort::inputs![];
-            inputs.insert(self.input_name.clone().into(), input_tensor.into());
+            // `ort::inputs!` requires at least one expression. Seed it with
+            // the mandatory `input` tensor, then `push` the optional ones.
+            let mut inputs = ort::inputs![self.input_name.clone() => input_tensor];
             if !self.sr_name.is_empty() {
-                inputs.insert(self.sr_name.clone().into(), sr_tensor.into());
+                inputs.push((self.sr_name.clone().into(), sr_tensor.into()));
             }
             if !self.state_name.is_empty() {
-                inputs.insert(self.state_name.clone().into(), state_tensor.into());
+                inputs.push((self.state_name.clone().into(), state_tensor.into()));
             }
 
             let outputs = self
@@ -199,7 +197,11 @@ impl SileroVad {
             }
         }
 
-        Ok(probs)
+        Ok(VadProbabilities {
+            values: probs,
+            hop_samples: VAD_WINDOW_SAMPLES,
+            sample_rate: VAD_SAMPLE_RATE,
+        })
     }
 }
 
@@ -216,110 +218,9 @@ impl Vad for SileroVad {
         VAD_SAMPLE_RATE
     }
 
-    fn speech_probabilities(
-        &self,
-        samples: &[f32],
-    ) -> Result<VadProbabilities, svaraflow_core::error::CoreError> {
-        // The `Vad` trait takes `&self` so it can be shared behind `&dyn`.
-        // `ort::Session::run` takes `&self` too, so no interior mutability
-        // is needed here; the per-call state lives in `run_windows`.
-        let mut this = UnsafeRef::new(self);
-        this.run_windows(samples).map_err(|e| {
-            svaraflow_core::error::CoreError::VadFailed(e.to_string())
-        })
-    }
-}
-
-/// Minimal shim so `run_windows` (which needs `&mut self` for clarity of
-/// ownership at the call site) can be called from `&self`.
-///
-/// `run_windows` only mutates local state; it does not write through the
-/// session. The shim is safe by construction: no aliasing `&mut self`
-/// escapes this function.
-struct UnsafeRef<'a> {
-    inner: &'a SileroVad,
-}
-
-impl<'a> UnsafeRef<'a> {
-    fn new(inner: &'a SileroVad) -> Self {
-        Self { inner }
-    }
-
-    fn run_windows(&mut self, samples: &[f32]) -> Result<Vec<f32>, AsrError> {
-        // Call through `&self`; the method only allocates locals.
-        self.inner.run_windows_immut(samples)
-    }
-}
-
-impl SileroVad {
-    /// The real implementation, taking `&self`.
-    fn run_windows_immut(&self, samples: &[f32]) -> Result<Vec<f32>, AsrError> {
-        // Same body as `run_windows` above but through `&self`. The session
-        // is `Sync`-safe for `run`; per-call state is local.
-        let window = VAD_WINDOW_SAMPLES as usize;
-        let count = samples.len().div_ceil(window);
-        let mut probs = Vec::with_capacity(count);
-
-        let mut state_data = vec![0.0f32; STATE_SHAPE.iter().product()];
-        let mut window_buf = vec![0.0f32; window];
-
-        for i in 0..count {
-            let start = i * window;
-            let end = (start + window).min(samples.len());
-            window_buf[..end - start].copy_from_slice(&samples[start..end]);
-            for s in &mut window_buf[end - start..] {
-                *s = 0.0;
-            }
-
-            let input_tensor =
-                Tensor::from_array(([1usize, window], window_buf.clone()))
-                    .map_err(|e| AsrError::VadInference(e.to_string()))?;
-            let sr_data = [i64::from(VAD_SAMPLE_RATE)];
-            let sr_tensor = Tensor::from_array(([1usize], sr_data.to_vec()))
-                .map_err(|e| AsrError::VadInference(e.to_string()))?;
-            let state_tensor =
-                Tensor::from_array((STATE_SHAPE, state_data.clone()))
-                    .map_err(|e| AsrError::VadInference(e.to_string()))?;
-
-            let mut inputs = ort::inputs![];
-            inputs.insert(self.input_name.clone().into(), input_tensor.into());
-            if !self.sr_name.is_empty() {
-                inputs.insert(self.sr_name.clone().into(), sr_tensor.into());
-            }
-            if !self.state_name.is_empty() {
-                inputs.insert(self.state_name.clone().into(), state_tensor.into());
-            }
-
-            let outputs = self
-                .session
-                .run(inputs)
-                .map_err(|e| AsrError::VadInference(e.to_string()))?;
-
-            let (_, prob_slice) = outputs[self.output_name.as_str()]
-                .try_extract_tensor::<f32>()
-                .map_err(|e| AsrError::VadInference(e.to_string()))?;
-            probs.push(prob_slice.first().copied().unwrap_or(0.0));
-
-            if !self.state_out_name.is_empty() {
-                let (_, next_state) = outputs[self.state_out_name.as_str()]
-                    .try_extract_tensor::<f32>()
-                    .map_err(|e| AsrError::VadInference(e.to_string()))?;
-                if next_state.len() == state_data.len() {
-                    state_data.copy_from_slice(next_state);
-                } else {
-                    return Err(AsrError::VadOutputShape {
-                        name: self.state_out_name.clone(),
-                        reason: format!(
-                            "expected {} state values, got {}",
-                            state_data.len(),
-                            next_state.len()
-                        ),
-                    });
-                }
-            }
-        }
-
-        Ok(probs)
+    fn speech_probabilities(&mut self, samples: &[f32]) -> Result<VadProbabilities, CoreError> {
+        self.run(samples)
+            .map_err(|e| CoreError::VadFailed(e.to_string()))
     }
 }
 

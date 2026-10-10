@@ -1,3 +1,4 @@
+// svaraflow-core/src/audio/mixdown.rs
 //! Places decoded clips on the timeline and mixes the selected tracks.
 //!
 //! [`render_analysis_signal`] is deliberately ignorant of media files: it
@@ -101,7 +102,6 @@ pub fn render_analysis_signal(
 
             let destination = frames_to_samples(clip.start, timeline.fps, ANALYSIS_SAMPLE_RATE);
             if destination < 0 {
-                // Clip starts before frame 0; nothing to place.
                 continue;
             }
             let destination = destination as usize;
@@ -109,10 +109,7 @@ pub fn render_analysis_signal(
                 continue;
             }
 
-            let count = decoded
-                .samples
-                .len()
-                .min(total_samples - destination);
+            let count = decoded.samples.len().min(total_samples - destination);
             for (offset, sample) in decoded.samples.iter().take(count).enumerate() {
                 accumulator[destination + offset] += *sample;
             }
@@ -134,8 +131,6 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
-    /// Returns a canned signal per clip id. Ids not present decode to silence
-    /// of `default_len` samples.
     struct FakeDecoder {
         canned: HashMap<String, MonoAudio>,
         default_len: usize,
@@ -170,6 +165,9 @@ mod tests {
         }
     }
 
+    /// Test helper: `source_in = 0`, `start = start`, `source_out = source_out`.
+    /// Note the third argument is the exclusive source out-point, not the
+    /// clip's end frame on the timeline.
     fn clip(id: &str, start: i64, source_out: i64) -> Clip {
         Clip {
             id: id.to_string(),
@@ -179,6 +177,7 @@ mod tests {
             start,
             speed: 1.0,
             has_audio: true,
+            muted: false,
         }
     }
 
@@ -256,10 +255,8 @@ mod tests {
     fn render_places_a_single_clip() {
         let tl = timeline(at_30fps(), vec![audio_track(1, vec![clip("a", 0, 30)])]);
         let tracks = select_tracks(&tl, None);
-        let mut decoder = FakeDecoder::new(16_000).with(
-            "a",
-            MonoAudio::new(vec![1.0; 16_000], ANALYSIS_SAMPLE_RATE),
-        );
+        let mut decoder = FakeDecoder::new(16_000)
+            .with("a", MonoAudio::new(vec![1.0; 16_000], ANALYSIS_SAMPLE_RATE));
 
         let mixed = render_analysis_signal(&tl, &tracks, &mut decoder).unwrap();
         assert_eq!(mixed.sample_rate, ANALYSIS_SAMPLE_RATE);
@@ -269,18 +266,19 @@ mod tests {
 
     #[test]
     fn render_offsets_a_clip_by_its_start_frame() {
-        // Clip starts at frame 30 = 1 second = sample 16 000.
-        let tl = timeline(at_30fps(), vec![audio_track(1, vec![clip("a", 30, 60)])]);
+        // One 30-frame clip (1 s) starting at frame 30.
+        let tl = timeline(at_30fps(), vec![audio_track(1, vec![clip("a", 30, 30)])]);
         let tracks = select_tracks(&tl, None);
-        let mut decoder = FakeDecoder::new(16_000).with(
-            "a",
-            MonoAudio::new(vec![1.0; 16_000], ANALYSIS_SAMPLE_RATE),
-        );
+        let mut decoder = FakeDecoder::new(16_000)
+            .with("a", MonoAudio::new(vec![1.0; 16_000], ANALYSIS_SAMPLE_RATE));
 
         let mixed = render_analysis_signal(&tl, &tracks, &mut decoder).unwrap();
+        // Track ends at frame 60 = sample 32 000.
         assert_eq!(mixed.len(), 32_000);
         assert!(mixed.samples[..16_000].iter().all(|s| *s == 0.0));
-        assert!(mixed.samples[16_000..].iter().all(|s| (*s - 1.0).abs() < 1e-6));
+        assert!(mixed.samples[16_000..]
+            .iter()
+            .all(|s| (*s - 1.0).abs() < 1e-6));
     }
 
     #[test]
@@ -294,17 +292,10 @@ mod tests {
         );
         let tracks = select_tracks(&tl, None);
         let mut decoder = FakeDecoder::new(16_000)
-            .with(
-                "a",
-                MonoAudio::new(vec![1.0; 16_000], ANALYSIS_SAMPLE_RATE),
-            )
-            .with(
-                "b",
-                MonoAudio::new(vec![0.0; 16_000], ANALYSIS_SAMPLE_RATE),
-            );
+            .with("a", MonoAudio::new(vec![1.0; 16_000], ANALYSIS_SAMPLE_RATE))
+            .with("b", MonoAudio::new(vec![0.0; 16_000], ANALYSIS_SAMPLE_RATE));
 
         let mixed = render_analysis_signal(&tl, &tracks, &mut decoder).unwrap();
-        // Average of 1.0 and 0.0 is 0.5.
         assert!(mixed.samples.iter().all(|s| (*s - 0.5).abs() < 1e-6));
     }
 
@@ -312,10 +303,8 @@ mod tests {
     fn render_a_single_track_is_not_attenuated() {
         let tl = timeline(at_30fps(), vec![audio_track(1, vec![clip("a", 0, 30)])]);
         let tracks = select_tracks(&tl, None);
-        let mut decoder = FakeDecoder::new(16_000).with(
-            "a",
-            MonoAudio::new(vec![0.75; 16_000], ANALYSIS_SAMPLE_RATE),
-        );
+        let mut decoder = FakeDecoder::new(16_000)
+            .with("a", MonoAudio::new(vec![0.75; 16_000], ANALYSIS_SAMPLE_RATE));
 
         let mixed = render_analysis_signal(&tl, &tracks, &mut decoder).unwrap();
         assert!(mixed.samples.iter().all(|s| (*s - 0.75).abs() < 1e-6));
@@ -323,38 +312,36 @@ mod tests {
 
     #[test]
     fn render_truncates_a_clip_that_overruns_the_signal() {
-        // The track ends at frame 30, but the decoder returns two seconds of
-        // audio. Only the first second must survive.
         let tl = timeline(at_30fps(), vec![audio_track(1, vec![clip("a", 0, 30)])]);
         let tracks = select_tracks(&tl, None);
-        let mut decoder = FakeDecoder::new(16_000).with(
-            "a",
-            MonoAudio::new(vec![1.0; 32_000], ANALYSIS_SAMPLE_RATE),
-        );
+        let mut decoder = FakeDecoder::new(16_000)
+            .with("a", MonoAudio::new(vec![1.0; 32_000], ANALYSIS_SAMPLE_RATE));
 
         let mixed = render_analysis_signal(&tl, &tracks, &mut decoder).unwrap();
         assert_eq!(mixed.len(), 16_000);
     }
 
     #[test]
-    fn render_ignores_a_clip_starting_past_the_end() {
+    fn render_places_multiple_clips_at_their_start_frames() {
+        // short: start 0, duration 30 frames, end 30.
+        // late:  start 100, duration 30 frames, end 130.
         let tl = timeline(
             at_30fps(),
             vec![audio_track(
                 1,
-                vec![clip("short", 0, 30), clip("late", 100, 130)],
+                vec![clip("short", 0, 30), clip("late", 100, 30)],
             )],
         );
         let tracks = select_tracks(&tl, None);
-        let mut decoder = FakeDecoder::new(16_000).with(
-            "short",
-            MonoAudio::new(vec![1.0; 16_000], ANALYSIS_SAMPLE_RATE),
-        );
+        let mut decoder = FakeDecoder::new(16_000)
+            .with("short", MonoAudio::new(vec![1.0; 16_000], ANALYSIS_SAMPLE_RATE));
 
         let mixed = render_analysis_signal(&tl, &tracks, &mut decoder).unwrap();
-        // The signal runs to frame 130; the "late" clip decodes to 16 000
-        // zeros and lands at sample 53 333, well inside the buffer.
-        assert_eq!(mixed.len(), frames_to_samples(130, at_30fps(), 16_000) as usize);
+        // Signal runs to frame 130 = sample 69 333.
+        assert_eq!(
+            mixed.len(),
+            frames_to_samples(130, at_30fps(), 16_000) as usize
+        );
         assert_eq!(decoder.calls, vec!["short", "late"]);
     }
 

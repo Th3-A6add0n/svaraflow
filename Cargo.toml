@@ -21,7 +21,11 @@ readme = "README.md"
 
 [workspace.dependencies]
 svaraflow-core = { path = "svaraflow-core" }
-svaraflow-asr = { path = "svaraflow-asr" }
+# `default-features = false` here is what lets `svaraflow-cli` build with
+# `--no-default-features` and skip ONNX Runtime. Without it, Cargo ignores
+# the member-level override (pre-2024 edition) and the `vad` feature has no
+# effect on the dependency graph.
+svaraflow-asr = { path = "svaraflow-asr", default-features = false }
 svaraflow-text = { path = "svaraflow-text" }
 svaraflow-render = { path = "svaraflow-render" }
 svaraflow-rpc = { path = "svaraflow-rpc" }

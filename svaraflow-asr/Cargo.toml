@@ -19,7 +19,18 @@ vad = ["dep:ort"]
 svaraflow-core.workspace = true
 thiserror = "1"
 
-# ONNX Runtime bindings for Silero VAD. The default `download-binaries`
-# feature fetches a prebuilt runtime at build time; set the `ORT_STRATEGY`
-# env var to `system` to link a system runtime instead. See ADR-0018.
-ort = { version = "2.0.0-rc.9", default-features = false, features = ["ndarray", "download-binaries"], optional = true }
+# ONNX Runtime bindings for Silero VAD.
+#
+# `default-features = false` drops `download-binaries` and `tls-native`.
+# The download path in `ort-sys` 2.0.0-rc.12+ requires a TLS backend and
+# calls a `ureq` 3.x API surface that the resolved `ureq` does not expose;
+# system linking avoids both problems and makes offline builds possible.
+#
+# Set `ORT_LIB_PATH` to the directory containing `onnxruntime.dll` (Windows)
+# or `libonnxruntime.so` (Linux), or install ONNX Runtime system-wide and
+# let `pkg-config` find it. See docs/DECISIONS.md (ADR-0018).
+ort = { version = "2.0.0-rc.9", default-features = false, features = [
+    "ndarray",
+    "std",
+    "load-dynamic",
+], optional = true }

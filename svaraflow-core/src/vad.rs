@@ -16,6 +16,13 @@
 //! 4. [`hybrid_snap`] refines each boundary in the resampled mask to the
 //!    lowest-energy frame within [`DEFAULT_SNAP_RADIUS_S`] (100 ms), using
 //!    the dBFS envelope as the energy signal.
+//!
+//! # `&mut self` on the trait
+//!
+//! [`Vad::speech_probabilities`] takes `&mut self`. ONNX Runtime's
+//! `Session::run` requires a mutable borrow, and the trait is called once
+//! per analysis, so the mutable receiver costs nothing at the call sites.
+//! See ADR-0019.
 
 use crate::error::CoreError;
 use crate::silence::FrameRange;
@@ -196,7 +203,11 @@ impl Default for VadParams {
 /// Implementations produce one probability per fixed-size window. The window
 /// size and sample rate are the implementor's concern; callers that use
 /// [`VadMask::resample_to`] do not need to match the envelope's hop.
-pub trait Vad: Send + Sync {
+///
+/// [`Vad::speech_probabilities`] takes `&mut self` because ONNX Runtime's
+/// `Session::run` requires a mutable borrow. Callers use `&mut dyn Vad`;
+/// `detect_silence_with_vad` is the only such caller in this crate.
+pub trait Vad: Send {
     /// Human-readable name for logs and error messages.
     fn name(&self) -> &'static str;
 
@@ -214,7 +225,7 @@ pub trait Vad: Send + Sync {
     /// # Errors
     ///
     /// [`CoreError::VadFailed`] if the underlying model cannot be run.
-    fn speech_probabilities(&self, samples: &[f32]) -> Result<VadProbabilities, CoreError>;
+    fn speech_probabilities(&mut self, samples: &[f32]) -> Result<VadProbabilities, CoreError>;
 }
 
 /// A no-op VAD that classifies every window as silence.
@@ -238,7 +249,7 @@ impl Vad for StubVad {
         VAD_SAMPLE_RATE
     }
 
-    fn speech_probabilities(&self, samples: &[f32]) -> Result<VadProbabilities, CoreError> {
+    fn speech_probabilities(&mut self, samples: &[f32]) -> Result<VadProbabilities, CoreError> {
         let windows = samples.len() / self.window_samples() as usize;
         Ok(VadProbabilities {
             values: vec![0.0; windows],
@@ -259,11 +270,7 @@ impl Vad for StubVad {
 /// `seconds_per_window` is the duration of one element of `raw`. Non-positive
 /// values, or an empty `raw`, return `raw` unchanged.
 #[must_use]
-pub fn apply_vad_rules(
-    raw: &[bool],
-    seconds_per_window: f64,
-    params: &VadParams,
-) -> Vec<bool> {
+pub fn apply_vad_rules(raw: &[bool], seconds_per_window: f64, params: &VadParams) -> Vec<bool> {
     if raw.is_empty() || seconds_per_window <= 0.0 {
         return raw.to_vec();
     }
@@ -279,9 +286,7 @@ pub fn apply_vad_rules(
     let padded: Vec<FrameRange> = runs
         .iter()
         .filter(|(is_speech, _, _)| *is_speech)
-        .map(|(_, s, e)| {
-            FrameRange::new((*s - pad).max(0), (*e + pad).min(raw.len() as i64))
-        })
+        .map(|(_, s, e)| FrameRange::new((*s - pad).max(0), (*e + pad).min(raw.len() as i64)))
         .collect();
     let merged = merge_ranges(&padded);
 
@@ -414,10 +419,6 @@ pub fn hybrid_snap(mask: &[bool], envelope_db: &[f32], radius_frames: usize) -> 
 mod tests {
     use super::*;
 
-    fn spf(hz: u32) -> f64 {
-        1.0 / f64::from(hz)
-    }
-
     // --- VadProbabilities::into_mask -------------------------------------
 
     #[test]
@@ -452,7 +453,11 @@ mod tests {
     fn apply_vad_rules_drops_short_speech() {
         // 10 windows at 32 ms each. One true at index 5 (32 ms of speech).
         // min_speech = 250 ms -> 8 windows; the run is dropped.
-        let raw = vec![false; 5].into_iter().chain(vec![true]).chain(vec![false; 4]).collect::<Vec<_>>();
+        let raw = vec![false; 5]
+            .into_iter()
+            .chain(vec![true])
+            .chain(vec![false; 4])
+            .collect::<Vec<_>>();
         let out = apply_vad_rules(&raw, 0.032, &VadParams::default());
         assert!(out.iter().all(|x| !x), "{out:?}");
     }
@@ -541,7 +546,7 @@ mod tests {
 
     #[test]
     fn stub_vad_reports_all_silence() {
-        let vad = StubVad;
+        let mut vad = StubVad;
         let probs = vad.speech_probabilities(&vec![0.5f32; 1024]).unwrap();
         assert_eq!(probs.values.len(), 2);
         assert!(probs.values.iter().all(|p| *p == 0.0));
@@ -550,7 +555,8 @@ mod tests {
     #[test]
     fn stub_vad_handles_short_input() {
         // Fewer than one window: zero complete windows.
-        let probs = StubVad.speech_probabilities(&[0.0; 100]).unwrap();
+        let mut vad = StubVad;
+        let probs = vad.speech_probabilities(&[0.0; 100]).unwrap();
         assert!(probs.values.is_empty());
     }
 

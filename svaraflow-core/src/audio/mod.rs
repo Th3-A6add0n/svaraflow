@@ -18,16 +18,9 @@ pub use envelope::{
 pub use mixdown::{frames_to_samples, render_analysis_signal, select_tracks, ClipDecoder};
 
 /// Sample rate of the analysis signal, in Hz.
-///
-/// Matches what `whisper.cpp` and Silero VAD expect, so the analysis signal
-/// can be handed to either without further conversion.
 pub const ANALYSIS_SAMPLE_RATE: u32 = 16_000;
 
 /// A mono, `f32`, single-rate audio signal.
-///
-/// Samples are nominally in `[-1.0, 1.0]` for normalised content. Values
-/// outside that range are preserved rather than clamped, because clamping
-/// distorts the dBFS envelope that the silence detector reads.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MonoAudio {
     /// The samples, in playback order.
@@ -79,13 +72,20 @@ impl MonoAudio {
 ///
 /// The ratio is free: `48_000 -> 16_000`, `44_100 -> 16_000` and
 /// `16_000 -> 16_000` are all valid. The output length is
-/// `round(input.len() * target_rate / input.sample_rate)`; the resampler is
-/// fed a zero-padded final chunk so the tail is not lost.
+/// `round(input.len() * target_rate / input.sample_rate)`.
+///
+/// The input is zero-padded by `input.sample_rate` samples before being fed
+/// to the resampler, because `FftFixedIn` produces output in discrete
+/// internal chunks and can return fewer samples than the exact expected
+/// count at some ratios (notably 48 kHz -> 16 kHz). The padded tail is
+/// discarded by the truncation below, so the visible output length is
+/// exactly `expected_out`.
 ///
 /// # Errors
 ///
 /// Returns [`CoreError::InvalidSampleRate`] when either rate is zero, and
-/// [`CoreError::Resample`] when the resampler cannot be constructed or fails.
+/// [`CoreError::Resample`] when the resampler cannot be constructed or
+/// fails.
 pub fn resample_to(input: &MonoAudio, target_rate: u32) -> Result<MonoAudio, CoreError> {
     if target_rate == 0 || input.sample_rate == 0 {
         return Err(CoreError::InvalidSampleRate(if target_rate == 0 {
@@ -104,8 +104,16 @@ pub fn resample_to(input: &MonoAudio, target_rate: u32) -> Result<MonoAudio, Cor
     let fs_in = input.sample_rate as usize;
     let fs_out = target_rate as usize;
 
-    // `chunk_size_out` is the number of output frames per `process` call; the
-    // matching input length is whatever `input_frames_next()` reports.
+    // Zero-pad the input so the resampler always has enough frames to
+    // produce the exact expected output length.
+    let padded: Vec<f32> = {
+        let mut v = Vec::with_capacity(input.samples.len() + fs_in);
+        v.extend_from_slice(&input.samples);
+        v.resize(input.samples.len() + fs_in, 0.0);
+        v
+    };
+    let total = padded.len();
+
     const CHUNK_OUT: usize = 1024;
     const SUB_CHUNKS: usize = 2;
     const CHANNELS: usize = 1;
@@ -123,7 +131,6 @@ pub fn resample_to(input: &MonoAudio, target_rate: u32) -> Result<MonoAudio, Cor
         ((input.samples.len() as f64) * (fs_out as f64) / (fs_in as f64)).round() as usize;
     let mut out: Vec<f32> = Vec::with_capacity(expected_out + CHUNK_OUT);
 
-    let total = input.samples.len();
     let mut pos = 0usize;
     let mut waves_in: Vec<Vec<f32>> = vec![Vec::new()];
 
@@ -133,18 +140,17 @@ pub fn resample_to(input: &MonoAudio, target_rate: u32) -> Result<MonoAudio, Cor
             waves_in[0] = vec![0.0f32; need];
         }
         let take = (total - pos).min(need);
-        waves_in[0][..take].copy_from_slice(&input.samples[pos..pos + take]);
+        waves_in[0][..take].copy_from_slice(&padded[pos..pos + take]);
         for sample in &mut waves_in[0][take..] {
             *sample = 0.0;
         }
-        let waves_out =
-            rubato::Resampler::process(&mut resampler, &waves_in, None).map_err(|e| {
-                CoreError::Resample {
-                    from_hz: input.sample_rate,
-                    to_hz: target_rate,
-                    reason: e.to_string(),
-                }
-            })?;
+        let waves_out = rubato::Resampler::process(&mut resampler, &waves_in, None).map_err(|e| {
+            CoreError::Resample {
+                from_hz: input.sample_rate,
+                to_hz: target_rate,
+                reason: e.to_string(),
+            }
+        })?;
         out.extend_from_slice(&waves_out[0]);
         pos += take;
     }

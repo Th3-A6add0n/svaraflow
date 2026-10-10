@@ -8,12 +8,24 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+# `vad` forwards to `svaraflow-asr`'s `vad` feature. Default on, so
+# `--method vad` and `--method hybrid` work out of the box. Build the CLI
+# with `--no-default-features` to skip ONNX Runtime entirely; the VAD
+# methods then fail with a clear error and the threshold path is
+# unaffected.
+default = ["vad"]
+vad = ["svaraflow-asr/vad"]
+
 [[bin]]
 name = "svaraflow-cli"
 path = "src/main.rs"
 
 [dependencies]
 svaraflow-core.workspace = true
+# Inherits `default-features = false` from the workspace entry. The `vad`
+# feature above turns ONNX support on explicitly.
+svaraflow-asr.workspace = true
 
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }

@@ -174,7 +174,14 @@ mod tests {
     #[test]
     fn timecode_drop_frame_uses_semicolon() {
         assert_eq!(
-            format_timecode(30, Fps { num: 30_000, den: 1001 }, true),
+            format_timecode(
+                30,
+                Fps {
+                    num: 30_000,
+                    den: 1001
+                },
+                true
+            ),
             "00:00:01;00"
         );
     }

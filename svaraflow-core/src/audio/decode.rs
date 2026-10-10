@@ -151,11 +151,7 @@ pub fn decode_via_ffmpeg(path: &Path, target_rate: u32) -> Result<MonoAudio, Cor
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| {
-            decode_err(format!(
-                "ffmpeg could not be started (is it on PATH?): {e}"
-            ))
-        })?;
+        .map_err(|e| decode_err(format!("ffmpeg could not be started (is it on PATH?): {e}")))?;
 
     // Drain stderr on a thread. Reading only stdout would deadlock if ffmpeg
     // filled the stderr pipe buffer while we blocked on stdout.
@@ -190,10 +186,7 @@ pub fn decode_via_ffmpeg(path: &Path, target_rate: u32) -> Result<MonoAudio, Cor
         )));
     }
 
-    Ok(MonoAudio::new(
-        pcm_f32le_to_samples(&raw),
-        target_rate,
-    ))
+    Ok(MonoAudio::new(pcm_f32le_to_samples(&raw), target_rate))
 }
 
 /// Time-compresses `input` by `speed` using linear interpolation.

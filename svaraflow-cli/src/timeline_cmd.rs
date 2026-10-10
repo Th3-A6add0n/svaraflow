@@ -25,21 +25,18 @@ fn from_media(file: &Path, out: &Path) -> Result<()> {
 
     let probe = probe_with_ffprobe(file)?;
 
-    let fps = probe.fps().ok_or_else(|| {
-        anyhow!(
-            "ffprobe did not report a frame rate for {}",
-            file.display()
-        )
-    })?;
+    let fps = probe
+        .fps()
+        .ok_or_else(|| anyhow!("ffprobe did not report a frame rate for {}", file.display()))?;
     let (width, height) = probe.dimensions().ok_or_else(|| {
         anyhow!(
             "ffprobe did not report video dimensions for {}",
             file.display()
         )
     })?;
-    let duration_s = probe.duration_seconds().ok_or_else(|| {
-        anyhow!("ffprobe did not report a duration for {}", file.display())
-    })?;
+    let duration_s = probe
+        .duration_seconds()
+        .ok_or_else(|| anyhow!("ffprobe did not report a duration for {}", file.display()))?;
 
     let duration_frames = (duration_s * fps.as_f64()).round() as i64;
     if duration_frames <= 0 {

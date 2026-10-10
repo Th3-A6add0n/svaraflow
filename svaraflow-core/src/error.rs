@@ -95,6 +95,17 @@ pub enum CoreError {
     #[error("mixdown: {0}")]
     Mixdown(String),
 
+    // --- vad --------------------------------------------------------------
+
+    /// The VAD engine failed during model loading or inference.
+    ///
+    /// The payload is a free-form message from the concrete engine
+    /// (typically `svaraflow-asr`'s `AsrError`). It always names the
+    /// operation that failed and, where available, the model path or
+    /// ONNX Runtime variable to check.
+    #[error("vad failed: {0}")]
+    VadFailed(String),
+
     // --- scaffold ---------------------------------------------------------
 
     /// Feature not yet implemented.

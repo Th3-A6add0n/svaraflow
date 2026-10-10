@@ -65,7 +65,7 @@ impl Fps {
 }
 
 /// Whether a track carries picture or sound.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TrackKind {
     /// Video track.
@@ -149,6 +149,10 @@ pub struct Track {
     /// Video or audio.
     pub kind: TrackKind,
     /// 1-based index within the track kind.
+    ///
+    /// Video track 1 and audio track 1 are both legal: uniqueness is
+    /// per-kind. This matches the standard NLE convention (V1, V2, A1, A2,
+    /// ...).
     pub index: u32,
     /// Clips on this track. Order in JSON is preserved but does not need to
     /// be sorted by `start`.
@@ -172,7 +176,8 @@ pub struct Timeline {
     pub width: u32,
     /// Frame height in pixels.
     pub height: u32,
-    /// Tracks. Video and audio tracks share one array; disambiguate by `kind`.
+    /// Tracks. Video and audio tracks share one array; disambiguate by
+    /// `kind`.
     pub tracks: Vec<Track>,
 }
 
@@ -203,8 +208,8 @@ impl Timeline {
     /// Validates every invariant of the timeline.
     ///
     /// Checks: at least one track, non-zero dimensions, track indices start
-    /// at 1 and are unique, clip ids are unique, and every clip passes
-    /// [`Clip::validate`].
+    /// at 1 and are unique **within their kind**, clip ids are unique across
+    /// the whole timeline, and every clip passes [`Clip::validate`].
     pub fn validate(&self) -> Result<(), CoreError> {
         if self.width == 0 || self.height == 0 {
             return Err(CoreError::InvalidTimeline(
@@ -215,14 +220,16 @@ impl Timeline {
             return Err(CoreError::InvalidTimeline("no tracks".into()));
         }
 
-        let mut seen_track_indices = std::collections::HashSet::new();
+        // (kind, index) pairs must be unique: video 1 and audio 1 can
+        // coexist, but two video tracks cannot both be index 1.
+        let mut seen_kind_indexes = std::collections::HashSet::new();
         let mut seen_clip_ids = std::collections::HashSet::new();
 
         for track in &self.tracks {
             if track.index == 0 {
                 return Err(CoreError::InvalidTrackIndex(0));
             }
-            if !seen_track_indices.insert(track.index) {
+            if !seen_kind_indexes.insert((track.kind, track.index)) {
                 return Err(CoreError::DuplicateTrackIndex(track.index));
             }
             for clip in &track.clips {
@@ -373,6 +380,8 @@ mod tests {
 
     #[test]
     fn timeline_validate_accepts_sample() {
+        // sample_timeline has video 1 and audio 1, which is legal under
+        // per-kind index uniqueness.
         assert!(sample_timeline().validate().is_ok());
     }
 
@@ -385,14 +394,27 @@ mod tests {
     }
 
     #[test]
-    fn timeline_validate_rejects_duplicate_track_index() {
+    fn timeline_validate_rejects_duplicate_track_index_within_kind() {
+        // Two video tracks both at index 1 is a real error.
         let mut tl = sample_timeline();
-        tl.tracks[1].index = 1;
+        tl.tracks[1].kind = TrackKind::Video;
         tl.tracks[0].index = 1;
+        tl.tracks[1].index = 1;
         assert!(matches!(
             tl.validate(),
             Err(CoreError::DuplicateTrackIndex(1))
         ));
+    }
+
+    #[test]
+    fn timeline_validate_allows_same_index_across_kinds() {
+        // Video 1 and audio 1 coexist.
+        let tl = sample_timeline();
+        assert_eq!(tl.tracks[0].index, 1);
+        assert_eq!(tl.tracks[1].index, 1);
+        assert_eq!(tl.tracks[0].kind, TrackKind::Video);
+        assert_eq!(tl.tracks[1].kind, TrackKind::Audio);
+        assert!(tl.validate().is_ok());
     }
 
     #[test]

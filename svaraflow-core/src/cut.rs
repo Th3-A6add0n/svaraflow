@@ -266,7 +266,7 @@ fn cut_track_gaps(track: &Track, keep: &[FrameRange]) -> (Vec<Clip>, usize) {
         }
     }
 
-    produced.sort_by_key(|c| (c.start, c.end));
+    produced.sort_by_key(|c| (c.start, c.end()));
     (produced, removed)
 }
 
@@ -370,11 +370,7 @@ mod tests {
         }
     }
 
-    fn ranges(
-        keep: Vec<FrameRange>,
-        silences: Vec<FrameRange>,
-        total: i64,
-    ) -> SilenceRanges {
+    fn ranges(keep: Vec<FrameRange>, silences: Vec<FrameRange>, total: i64) -> SilenceRanges {
         let kept_frames: i64 = keep.iter().map(FrameRange::len).sum();
         let removed_frames: i64 = silences.iter().map(FrameRange::len).sum();
         let percent_shorter = if total > 0 {

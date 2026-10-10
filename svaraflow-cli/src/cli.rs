@@ -78,7 +78,10 @@ pub struct DetectionOptions {
     /// Path to `timeline.json`.
     pub timeline: PathBuf,
     /// Noise floor: `auto` (default) or a dBFS value such as `-45`.
-    #[arg(long, default_value = "auto")]
+    ///
+    /// Values are negative dBFS numbers, so the leading hyphen must be
+    /// accepted as part of the value rather than parsed as a flag.
+    #[arg(long, default_value = "auto", allow_hyphen_values = true)]
     pub noise: String,
     /// Minimum silence to remove, in seconds. Overrides the preset.
     #[arg(long)]
@@ -141,7 +144,7 @@ pub struct ApplyArgs {
     /// Write the cut timeline as FCP7 XML.
     #[arg(long)]
     pub xml: Option<PathBuf>,
-    /// Write the cut timeline as CMK3600 EDL.
+    /// Write the cut timeline as CMX3600 EDL.
     #[arg(long)]
     pub edl: Option<PathBuf>,
     /// Sequence name to use in the XML and EDL output. Defaults to the
@@ -278,6 +281,25 @@ mod tests {
         assert_eq!(a.opts.method, MethodArg::Hybrid);
         assert_eq!(a.opts.mode, ModeArg::Mute);
         assert!(a.json);
+    }
+
+    #[test]
+    fn parses_negative_noise_with_equals_syntax() {
+        let cli = Cli::try_parse_from([
+            "svaraflow-cli",
+            "silence",
+            "analyze",
+            "tl.json",
+            "--noise=-45",
+        ])
+        .expect("parse");
+        let Command::Silence(s) = cli.command else {
+            panic!();
+        };
+        let SilenceCommand::Analyze(a) = s.command else {
+            panic!();
+        };
+        assert_eq!(a.opts.noise, "-45");
     }
 
     #[test]

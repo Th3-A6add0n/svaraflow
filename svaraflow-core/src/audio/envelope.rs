@@ -1,3 +1,4 @@
+// svaraflow-core/src/audio/envelope.rs
 //! dBFS envelope for the analysis signal.
 //!
 //! The envelope reduces a `MonoAudio` to one dBFS level per hop. It is the
@@ -11,9 +12,7 @@
 //! 3-frame median filter. At [`ANALYSIS_SAMPLE_RATE`] that is 320 samples per
 //! window, 160 samples per hop, 100 frames per second.
 
-use f32::total_cmp;
-
-use super::{MonoAudio, ANALYSIS_SAMPLE_RATE};
+use super::MonoAudio;
 
 /// Lowest reported dBFS value. Digital silence maps here; the value is
 /// chosen so downstream arithmetic never touches `-inf`.
@@ -97,16 +96,12 @@ impl Envelope {
     }
 
     /// Level at `seconds`, or `None` when out of range.
-    ///
-    /// The lookup is by floor: 0.015 s with a 10 ms hop returns the level of
-    /// frame 1.
     #[must_use]
     pub fn level_at_seconds(&self, seconds: f64) -> Option<f32> {
         if seconds < 0.0 || self.is_empty() || self.sample_rate == 0 || self.hop_samples == 0 {
             return None;
         }
-        let frame =
-            (seconds * f64::from(self.sample_rate) / self.hop_samples as f64) as usize;
+        let frame = (seconds * f64::from(self.sample_rate) / self.hop_samples as f64) as usize;
         self.levels_db.get(frame).copied()
     }
 
@@ -149,9 +144,15 @@ fn rms_dbfs(samples: &[f32]) -> f32 {
 /// 3-frame median filter with boundary replication.
 ///
 /// For `input[i]` the neighbourhood is `[input[i-1], input[i], input[i+1]]`
-/// with `i-1` clamped to `0` and `i+1` clamped to `n - 1`. An isolated spike
-/// surrounded by quieter neighbours is removed; a sustained level is
-/// preserved; an edge is sharpened, not smeared.
+/// with `i-1` clamped to `0` and `i+1` clamped to `n - 1`. A single isolated
+/// outlier frame is removed; a sustained level is preserved; a step edge is
+/// sharpened, not smeared.
+///
+/// Note: because the RMS window is wider than the hop, a single-sample click
+/// in the audio shows up in **two** envelope frames, not one. The median
+/// filter is designed to remove a one-frame envelope spike; two-frame spikes
+/// survive by design and are handled downstream by the detector's
+/// min-silence rule.
 fn median_filter_3(input: &[f32]) -> Vec<f32> {
     let n = input.len();
     if n == 0 {
@@ -166,7 +167,7 @@ fn median_filter_3(input: &[f32]) -> Vec<f32> {
         let b = input[i];
         let c = input[(i + 1).min(n - 1)];
         let mut three = [a, b, c];
-        three.sort_by(total_cmp);
+        three.sort_by(f32::total_cmp);
         out.push(three[1]);
     }
     out
@@ -241,6 +242,7 @@ pub fn downsample_for_preview(envelope: &Envelope, target_points: usize) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::ANALYSIS_SAMPLE_RATE;
 
     const RATE: u32 = ANALYSIS_SAMPLE_RATE;
 
@@ -249,8 +251,7 @@ mod tests {
         (0..n)
             .map(|i| {
                 let t = i as f64 / f64::from(RATE);
-                (f64::from(amplitude)
-                    * (2.0 * std::f64::consts::PI * freq_hz * t).sin()) as f32
+                (f64::from(amplitude) * (2.0 * std::f64::consts::PI * freq_hz * t).sin()) as f32
             })
             .collect()
     }
@@ -317,10 +318,7 @@ mod tests {
     fn square_wave_is_zero_dbfs() {
         let env = envelope_of(square_samples(0.5, 1.0));
         let middle = env.levels_db[env.len() / 2];
-        assert!(
-            (middle - 0.0).abs() < 0.1,
-            "expected ~0 dBFS, got {middle}"
-        );
+        assert!((middle - 0.0).abs() < 0.1, "expected ~0 dBFS, got {middle}");
     }
 
     #[test]
@@ -341,27 +339,36 @@ mod tests {
         let transition: Vec<usize> = (0..env.len())
             .filter(|&i| env.levels_db[i] > DBFS_FLOOR + 1.0 && env.levels_db[i] < -4.0)
             .collect();
-        assert!(
-            transition.len() <= 3,
-            "transition too wide: {transition:?}"
-        );
+        assert!(transition.len() <= 3, "transition too wide: {transition:?}");
     }
 
     #[test]
-    fn single_spike_is_removed_by_median() {
-        // 0.2 s of silence with a single sample set to full scale at frame 10.
-        let mut samples = silence_samples(0.2);
-        let spike_index = 10 * 160;
-        samples[spike_index] = 1.0;
-        let env = envelope_of(samples);
+    fn median_filter_removes_an_isolated_envelope_frame() {
+        // Direct unit test of the median filter: a single loud frame between
+        // quiet neighbours is replaced by the median of the three, which is
+        // quiet.
+        let levels = vec![-100.0f32, -100.0, -20.0, -100.0, -100.0];
+        let filtered = median_filter_3(&levels);
+        assert_eq!(filtered[2], -100.0, "spike frame was not removed");
+        // The neighbours are unchanged.
+        assert_eq!(filtered[0], -100.0);
+        assert_eq!(filtered[1], -100.0);
+        assert_eq!(filtered[3], -100.0);
+        assert_eq!(filtered[4], -100.0);
+    }
 
-        // Before median, frame 10 would be about -25 dBFS (RMS of 1 sample
-        // over 320). After median it must be the floor again.
-        assert!(
-            env.levels_db.iter().all(|&v| v == DBFS_FLOOR),
-            "spike was not removed: {:?}",
-            env.levels_db
-        );
+    #[test]
+    fn median_filter_preserves_a_step_edge() {
+        // A sustained level change is kept as-is.
+        let levels = vec![-100.0f32, -100.0, -20.0, -20.0, -20.0];
+        let filtered = median_filter_3(&levels);
+        assert_eq!(filtered, vec![-100.0, -100.0, -20.0, -20.0, -20.0]);
+    }
+
+    #[test]
+    fn median_filter_handles_short_inputs() {
+        assert!(median_filter_3(&[]).is_empty());
+        assert_eq!(median_filter_3(&[0.5]), vec![0.5]);
     }
 
     #[test]

@@ -22,16 +22,15 @@
 //! # File URLs
 //!
 //! `<pathurl>` is written as `file://localhost/C%3a/media/file.mov`: drive
-//! letter percent-encoded, backslashes replaced by `/`, spaces as `%20`.
+//! letter percent-encoded **with lowercase hex**, backslashes replaced by
+//! `/`, spaces as `%20`. The spec (section G) writes `C%3a`; FCP7, Resolve
+//! and Premiere all accept either case.
 //!
 //! # Linked clips
 //!
 //! Every `clipitem` carries one `<link>` block per member of its link group,
 //! including itself. A link group is the set of clips that share the same
-//! `(source, start)` **and** includes at least one video and one audio clip;
-//! clips that do not share both a source and a start frame are not linked.
-//! This is what makes Premiere and Resolve arrive with the video and audio
-//! still paired after import.
+//! `(source, start)` **and** includes at least one video and one audio clip.
 
 use std::collections::HashMap;
 
@@ -84,7 +83,11 @@ pub fn write_xmeml(timeline: &Timeline, original_name: &str) -> Result<String, C
         .write_event(Event::Start(BytesStart::new("sequence")))
         .map_err(io_err)?;
 
-    write_element(&mut writer, "name", &format!("{original_name}{SEQUENCE_SUFFIX}"))?;
+    write_element(
+        &mut writer,
+        "name",
+        &format!("{original_name}{SEQUENCE_SUFFIX}"),
+    )?;
     write_element(
         &mut writer,
         "duration",
@@ -127,11 +130,7 @@ fn write_tracks(
             TrackKind::Video => "video",
             TrackKind::Audio => "audio",
         };
-        let matching: Vec<&Track> = timeline
-            .tracks
-            .iter()
-            .filter(|t| t.kind == kind)
-            .collect();
+        let matching: Vec<&Track> = timeline.tracks.iter().filter(|t| t.kind == kind).collect();
         if matching.is_empty() {
             continue;
         }
@@ -175,9 +174,6 @@ fn write_clipitem(
     write_element(writer, "duration", &clip.source_duration().to_string())?;
     write_rate(writer, timeline)?;
 
-    // `<enabled>` is where a muted audio clipitem is expressed. Video clips
-    // are always enabled, regardless of `muted`, because Mute mode only
-    // touches audio (ADR-0014).
     let enabled = match kind {
         TrackKind::Video => true,
         TrackKind::Audio => !clip.muted,
@@ -191,7 +187,6 @@ fn write_clipitem(
 
     write_file(writer, clip, timeline)?;
 
-    // One `<link>` block per member of the group, including self.
     if let Some(members) = link_index.group_of(&clip.id) {
         for member in members {
             write_link_block(writer, member)?;
@@ -260,13 +255,13 @@ fn write_rate(writer: &mut Writer<Vec<u8>>, timeline: &Timeline) -> Result<(), C
     write_element(
         writer,
         "ntsc",
-        if timeline.fps.is_ntsc() { "TRUE" } else { "FALSE" },
+        if timeline.fps.is_ntsc() {
+            "TRUE"
+        } else {
+            "FALSE"
+        },
     )?;
-    write_element(
-        writer,
-        "timebase",
-        &timeline.fps.integer_rate().to_string(),
-    )?;
+    write_element(writer, "timebase", &timeline.fps.integer_rate().to_string())?;
     writer
         .write_event(Event::End(BytesEnd::new("rate")))
         .map_err(io_err)?;
@@ -292,7 +287,8 @@ fn write_element(writer: &mut Writer<Vec<u8>>, name: &str, text: &str) -> Result
 /// `C:\media\a b.mov` becomes
 /// `file://localhost/C%3a/media/a%20b.mov`. Drive letters are case-preserved;
 /// backslashes become forward slashes; every byte outside the unreserved set
-/// plus `/` is percent-encoded as uppercase hex.
+/// plus `/` is percent-encoded as **lowercase** hex, matching the form the
+/// spec writes (`file://localhost/C%3a/...`).
 #[must_use]
 pub fn encode_path_url(path: &str) -> String {
     let normalized = path.replace('\\', "/");
@@ -305,7 +301,7 @@ pub fn encode_path_url(path: &str) -> String {
             }
             _ => {
                 out.push('%');
-                out.push_str(&format!("{byte:02X}"));
+                out.push_str(&format!("{byte:02x}"));
             }
         }
     }
@@ -330,10 +326,6 @@ struct LinkKey {
 }
 
 /// Maps each linked clip id to all members of its group, including itself.
-///
-/// A group is kept only when it contains at least one video and at least one
-/// audio clip. Clips whose key is unique to their kind are not linked and do
-/// not appear in the index.
 #[derive(Debug, Default)]
 struct LinkIndex {
     groups: HashMap<String, Vec<LinkMember>>,
@@ -364,8 +356,6 @@ impl LinkIndex {
             if !(has_video && has_audio) {
                 continue;
             }
-            // Sort so the output is deterministic: video first, then by
-            // track index, then by clip id.
             let mut sorted = members;
             sorted.sort_by(|a, b| {
                 let kind_rank = |k: TrackKind| match k {
@@ -573,7 +563,6 @@ mod tests {
     #[test]
     fn linked_pair_writes_two_link_blocks_per_clip() {
         let xml = write_xmeml(&linked_tl(), "x").unwrap();
-        // Two clips, each with two link blocks (self and partner) = four.
         let count = xml.matches("<link>").count();
         assert_eq!(count, 4, "expected 4 link blocks, got {count} in:\n{xml}");
     }
@@ -581,7 +570,6 @@ mod tests {
     #[test]
     fn linked_pair_references_the_other_clip() {
         let xml = write_xmeml(&linked_tl(), "x").unwrap();
-        // Each link group lists both members. Look for the cross references.
         assert!(xml.contains("<linkclipref>v1</linkclipref>"));
         assert!(xml.contains("<linkclipref>a1</linkclipref>"));
         assert!(xml.contains("<mediatype>video</mediatype>"));
@@ -607,7 +595,6 @@ mod tests {
             index: 2,
             clips: vec![tl.tracks[0].clips[0].clone()],
         });
-        // Same source, same start, both video. No audio in the group.
         let xml = write_xmeml(&tl, "x").unwrap();
         assert!(
             !xml.contains("<link>"),

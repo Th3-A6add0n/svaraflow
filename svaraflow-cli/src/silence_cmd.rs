@@ -68,13 +68,13 @@ fn run_analysis(opts: &DetectionOptions) -> Result<Analysis> {
         Method::Vad | Method::Hybrid => {
             #[cfg(feature = "vad")]
             {
-                let vad = load_silero_vad(opts)?;
-                detect_silence_with_vad(&envelope, &params, timeline.fps, &vad, &audio.samples)?
+                let mut vad = load_silero_vad(opts)?;
+                detect_silence_with_vad(&envelope, &params, timeline.fps, &mut vad, &audio.samples)?
             }
             #[cfg(not(feature = "vad"))]
             {
                 return Err(anyhow!(
-                    "--method {:?} requires the `vad` feature on `svaraflow-asr`, \
+                    "--method {:?} requires the `vad` feature on `svaraflow-cli`, \
                      which was not enabled at build time",
                     params.method
                 ));
@@ -113,7 +113,8 @@ fn build_timeline_audio(timeline: &Timeline, opts: &DetectionOptions) -> Result<
     } else {
         FileDecoder::with_ffmpeg_fallback()
     };
-    render_analysis_signal(timeline, &selected, &mut decoder).context("building the analysis signal")
+    render_analysis_signal(timeline, &selected, &mut decoder)
+        .context("building the analysis signal")
 }
 
 /// Loads a mixdown WAV at 16 kHz mono.
@@ -135,7 +136,8 @@ fn load_silero_vad(opts: &DetectionOptions) -> Result<svaraflow_asr::SileroVad> 
         anyhow!(
             "loading VAD model from {}: {e}\n\
              hint: pass --vad-model <path>, or place the Silero VAD v5 ONNX export \
-             at {DEFAULT_VAD_MODEL}",
+             at {DEFAULT_VAD_MODEL}, and make sure ONNX Runtime is on ORT_DYLIB_PATH \
+             or PATH",
             path.display()
         )
     })
