@@ -35,6 +35,9 @@ Thumbs.db
 !.env.example
 /docs
 /generate-Repo-Tree.py
+/*.ps1
+/repo-tree.md
+/repo-tree.txt
 
 # Logs
 *.log
@@ -60,3 +63,7 @@ Thumbs.db
 # Tooling
 /tools/.cache/
 /tools/.venv
+# scratch
+/temp*.ps1
+/repo-audit.txt
+/repo-tree.md

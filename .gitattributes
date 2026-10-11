@@ -1,31 +1,4 @@
-# .gitattributes
-#
-# Force LF line endings on files whose bytes are compared by tests or by
-# tooling. Without this, `git checkout` on Windows converts LF to CRLF and
-# breaks the byte-for-byte golden comparison in
-# svaraflow-core/tests/xmeml_golden.rs.
-#
-# `text eol=lf`: check the file in with LF, check it out with LF, on every
-# platform.
-
-svaraflow-core/tests/fixtures/*.xml text eol=lf
-svaraflow-core/tests/fixtures/*.edl text eol=lf
-
-# Rust source: rustfmt emits LF; keep it LF across platforms so `cargo fmt
-# --check` is stable on a Windows checkout.
-*.rs text eol=lf
-
-# TOML, Markdown, YAML: line endings do not affect the tools, but keeping
-# them LF avoids noise in diffs when contributors move between OSes.
-*.toml text eol=lf
-*.md text eol=lf
-*.yml text eol=lf
-*.yaml text eol=lf
-
-# PowerShell scripts: preserve whatever the file has. PowerShell is tolerant
-# of both, but PowerShell 7 prefers LF and Windows PowerShell 5.1 prefers
-# CRLF; let the author decide.
-*.ps1 text
-
-# Everything else: normal Git text/binary detection, no eol forcing.
 * text=auto
+*.xml text eol=lf
+*.edl text eol=lf
+*.json text eol=lf
