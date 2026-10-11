@@ -1,3 +1,4 @@
+// svaraflow-cli/src/transcribe_cmd.rs
 //! `svaraflow-cli transcribe` and `svaraflow-cli models`.
 
 use std::path::{Path, PathBuf};
@@ -67,6 +68,9 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
         audio.len()
     );
 
+    // The perf switches (`flash_attn`, `audio_ctx`, `parallel`, `vad_pack`,
+    // `ranges`) are deliberately not exposed on this CLI yet. Every one is
+    // at its default: off. See docs/PERF.md.
     let cfg = TranscribeConfig {
         tier,
         language: parse_language(&args.language)?,
@@ -84,9 +88,12 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
         repetition_guard: true,
         max_chunk_s: svaraflow_asr::DEFAULT_MAX_CHUNK_S,
         overlap_s: svaraflow_asr::DEFAULT_OVERLAP_S,
-        // Use every logical core. Overridable through `bench-asr`; the
-        // interactive CLI does not expose a flag for it.
         threads: 0,
+        flash_attn: false,
+        audio_ctx: None,
+        parallel: 1,
+        vad_pack: false,
+        ranges: None,
     };
     if cfg.use_dtw {
         eprintln!("using token-level DTW timestamps");

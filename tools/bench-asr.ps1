@@ -1,19 +1,24 @@
+# tools/bench-asr.ps1
 <#
 .SYNOPSIS
     Benchmark the Hinglish ASR models on the clips in tests/audio.
 
 .DESCRIPTION
-    Builds bench-asr twice (CPU-only and CUDA), then runs it on every model
-    that is both declared below and present in the models folder, on every
-    .wav / .mp4 clip in tests/audio with a matching .txt reference transcript.
+    Two modes.
 
-    Peak RAM comes from the Windows-reported peak working set of the bench
-    process. Peak VRAM comes from polling nvidia-smi while the process runs.
+    Default mode builds bench-asr twice (CPU and CUDA), then runs it on
+    every model that is both declared below and present in the models
+    folder, on every .wav / .mp4 clip in tests/audio with a matching .txt
+    reference transcript. Produces one Markdown table per run.
 
-    Models that are declared but not on disk are skipped and named in the
-    table caption. Missing reference .txt files cause the WER column to be
-    blank for that clip; missing tests/timing/<stem>.json files cause the
-    word-offset column to be blank.
+    -Matrix mode runs one switch at a time against a baseline on a single
+    clip, per device, at a fixed thread count, with a per-leg timeout.
+    Produces a Markdown table the user can paste back for analysis.
+    It does not change any defaults.
+
+    Peak RAM comes from the OS-reported working set of the bench process.
+    Peak VRAM comes from polling nvidia-smi while the process runs. Both
+    are sampled in the main loop; no background job is used.
 
 .PARAMETER ModelsDir
     Where the GGML files live. Default: %LOCALAPPDATA%\SvaraFlow\models.
@@ -25,18 +30,26 @@
     Labeled timing JSON. Default: tests\timing.
 
 .PARAMETER VadModel
-    Optional Silero VAD ONNX path. If the file does not exist, chunking
-    falls back to fixed windows. Default: models\silero_vad_v5.onnx.
+    Optional Silero VAD ONNX path.
 
 .PARAMETER Output
     Markdown file to write. Default: bench-asr.md.
 
 .PARAMETER Threads
-    Decoder threads handed to whisper.cpp. 0 (default) means "all logical
-    cores". Override to test scaling.
+    Decoder threads. 0 (default) means "all logical cores". -Matrix
+    forces 12 unless overridden.
+
+.PARAMETER Matrix
+    Run one switch at a time against a baseline.
+
+.PARAMETER MatrixAudio
+    Clip for -Matrix. Default: tests\audio\benchmark20s.wav.
+
+.PARAMETER TimeoutS
+    Per-leg wall-clock limit in -Matrix. Default: 300.
 
 .PARAMETER SkipBuild
-    Do not run cargo; use existing target\release\bench-asr-{cpu,gpu}.exe.
+    Do not run cargo; use existing bench-asr-{cpu,gpu}.exe.
 
 .PARAMETER CpuOnly / .PARAMETER GpuOnly
     Run only one mode.
@@ -45,8 +58,7 @@
     .\tools\bench-asr.ps1
 
 .EXAMPLE
-    # Just the CPU half, with 8 threads, skipping the rebuild.
-    .\tools\bench-asr.ps1 -CpuOnly -Threads 8 -SkipBuild
+    .\tools\bench-asr.ps1 -Matrix -SkipBuild
 #>
 [CmdletBinding()]
 param(
@@ -56,6 +68,9 @@ param(
     [string]$VadModel = "models\silero_vad_v5.onnx",
     [string]$Output = "bench-asr.md",
     [int]$Threads = 0,
+    [switch]$Matrix,
+    [string]$MatrixAudio = "tests\audio\benchmark20s.wav",
+    [int]$TimeoutS = 300,
     [switch]$SkipBuild,
     [switch]$CpuOnly,
     [switch]$GpuOnly
@@ -70,8 +85,6 @@ if ($CpuOnly -and $GpuOnly) {
 }
 
 # ---------- desired model set ----------
-# Present-on-disk wins; anything absent is silently skipped and named in
-# the output.
 $desired = @(
     [pscustomobject]@{ Name = "Swift F16"; File = "ggml-hinglish-swift-f16.bin";  Tier = "light"    }
     [pscustomobject]@{ Name = "Swift Q5";  File = "ggml-hinglish-swift-q5_0.bin"; Tier = "light"    }
@@ -91,7 +104,6 @@ foreach ($m in $desired) {
         $missing.Add($m.Name)
     }
 }
-
 if ($present.Count -eq 0) {
     Write-Error "No benchmark models found in $ModelsDir. Looked for: $($desired.File -join ', ')"
     exit 1
@@ -100,21 +112,11 @@ if ($missing.Count -gt 0) {
     Write-Host "Not on disk (will be skipped): $($missing -join ', ')"
 }
 
-# ---------- audio clips ----------
-$audioFiles = Get-ChildItem -Path $AudioDir -File |
-    Where-Object { $_.Extension -in ".wav", ".mp4" } |
-    Sort-Object Name
-if ($audioFiles.Count -eq 0) {
-    Write-Error "No .wav or .mp4 files in $AudioDir"
-    exit 1
-}
-
+# ---------- VAD ----------
 $vadArg = $null
 if ($VadModel -and (Test-Path $VadModel)) {
     $vadArg = (Resolve-Path $VadModel).Path
     Write-Host "VAD model: $vadArg"
-} else {
-    Write-Host "No VAD model found; chunking will use fixed windows."
 }
 
 # ---------- build ----------
@@ -136,36 +138,19 @@ if (-not $SkipBuild) {
     }
 }
 
-# ---------- runner ----------
-# Uses System.Diagnostics.ProcessStartInfo.ArgumentList rather than
-# Start-Process -ArgumentList. The latter takes a single raw command-line
-# string and, in PowerShell 7, wraps the whole thing in an extra layer of
-# quotes, so the child receives one argv element and clap reports every
-# required flag as missing. ArgumentList escapes each element against the
-# Windows CreateProcess rules, which is the guarantee we need for paths
-# that contain spaces (this repo lives under "Personal CODING Projects").
-function Invoke-Bench {
+# ---------- one process run ----------
+#
+# Uses System.Diagnostics.ProcessStartInfo.ArgumentList so paths with
+# spaces (this repo lives under "Personal CODING Projects") are passed as
+# individual argv entries. Samples WorkingSet64 and nvidia-smi memory.used
+# while the process runs; no background job.
+function Invoke-BenchOnce {
     param(
         [string]$Exe,
-        [pscustomobject]$Model,
-        [string]$AudioPath,
-        [string]$Reference,
-        [string]$Timing,
+        [string[]]$ExtraArgs,
         [string]$Mode,
-        [string]$Vad,
-        [int]$Threads
+        [int]$TimeoutSeconds
     )
-
-    $argList = @(
-        "--model",      $Model.Path,
-        "--model-name", $Model.Name,
-        "--tier",       $Model.Tier,
-        "--audio",      $AudioPath,
-        "--threads",    "$Threads"
-    )
-    if ($Reference) { $argList += @("--reference", $Reference) }
-    if ($Timing)    { $argList += @("--timing",    $Timing) }
-    if ($Vad)       { $argList += @("--vad-model", $Vad) }
 
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
     $psi.FileName               = $Exe
@@ -173,20 +158,8 @@ function Invoke-Bench {
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
     $psi.CreateNoWindow         = $true
-    foreach ($a in $argList) {
+    foreach ($a in $ExtraArgs) {
         [void]$psi.ArgumentList.Add([string]$a)
-    }
-
-    $vramSamples = New-Object System.Collections.Generic.List[int]
-    $pollJob = $null
-    if ($Mode -eq "GPU") {
-        $pollJob = Start-Job -ScriptBlock {
-            while ($true) {
-                $v = & nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>$null
-                if ($v) { [int]$v }
-                Start-Sleep -Milliseconds 200
-            }
-        }
     }
 
     $proc = [System.Diagnostics.Process]::new()
@@ -194,127 +167,297 @@ function Invoke-Bench {
     $stdout = ""
     $stderr = ""
     $code = -1
-    $peakRamBytes = $null
+    $peakRamBytes = 0L
+    $peakVramMb = $null
+    $timedOut = $false
+
     try {
         [void]$proc.Start()
         $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
         $stderrTask = $proc.StandardError.ReadToEndAsync()
-        $proc.WaitForExit()
+
+        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+        while (-not $proc.WaitForExit(200)) {
+            try {
+                $proc.Refresh()
+                $ws = $proc.WorkingSet64
+                if ($ws -gt $peakRamBytes) { $peakRamBytes = $ws }
+            } catch { }
+            if ($Mode -eq "GPU") {
+                $v = & nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>$null
+                if ($v) {
+                    $vv = [int]($v | Select-Object -First 1)
+                    if ($null -eq $peakVramMb -or $vv -gt $peakVramMb) { $peakVramMb = $vv }
+                }
+            }
+            if ((Get-Date) -gt $deadline) {
+                try { $proc.Kill($true) } catch { }
+                $timedOut = $true
+                break
+            }
+        }
+
+        if (-not $timedOut) {
+            try {
+                $proc.Refresh()
+                if ($proc.WorkingSet64 -gt $peakRamBytes) { $peakRamBytes = $proc.WorkingSet64 }
+            } catch { }
+        }
+
         $stdout = $stdoutTask.GetAwaiter().GetResult()
         $stderr = $stderrTask.GetAwaiter().GetResult()
-        $code = $proc.ExitCode
-        # Windows-reported peak RSS for the process, in bytes. Unlike the
-        # Rust allocator this includes whisper.cpp's C-side allocations.
-        $peakRamBytes = $proc.PeakWorkingSet64
+        if (-not $timedOut) { $code = $proc.ExitCode }
     } finally {
-        if ($pollJob) {
-            Stop-Job $pollJob -ErrorAction SilentlyContinue
-            $vramSamples = @(Receive-Job $pollJob)
-            Remove-Job $pollJob -Force -ErrorAction SilentlyContinue
-        }
         $proc.Dispose()
     }
 
-    if ($code -ne 0 -or -not $stdout) {
-        Write-Warning "bench-asr failed for $($Model.Name) / $($AudioPath) (exit $code)"
-        if ($stderr) {
-            Write-Warning "stderr tail:"
-            ($stderr -split "`n" | Select-Object -Last 8) | ForEach-Object { Write-Warning "  $_" }
+    if ($timedOut) {
+        Write-Warning "timed out after ${TimeoutSeconds}s"
+        return [pscustomobject]@{
+            Ok = $false
+            TimedOut = $true
+            PeakRamMb = $peakRamBytes / 1MB
+            PeakVramMb = $peakVramMb
+            Json = $null
+            StderrTail = ($stderr -split "`n" | Select-Object -Last 6) -join "`n"
         }
-        return $null
     }
 
-    try {
-        $obj = $stdout | ConvertFrom-Json
-    } catch {
-        Write-Warning "bench-asr produced non-JSON for $($Model.Name) / $($AudioPath): $_"
-        return $null
+    $obj = $null
+    if ($code -eq 0 -and $stdout) {
+        try { $obj = $stdout | ConvertFrom-Json } catch { $obj = $null }
     }
 
-    $peakVram = if ($vramSamples.Count -gt 0) {
-        ($vramSamples | Measure-Object -Maximum).Maximum
-    } else { $null }
-
-    $obj | Add-Member -NotePropertyName mode           -NotePropertyValue $Mode -Force
-    $obj | Add-Member -NotePropertyName peak_vram_mb   -NotePropertyValue $peakVram -Force
-    $obj | Add-Member -NotePropertyName peak_ram_mb_os -NotePropertyValue ([double]($peakRamBytes / 1MB)) -Force
-    return $obj
+    [pscustomobject]@{
+        Ok = ($code -eq 0 -and $null -ne $obj)
+        TimedOut = $false
+        ExitCode = $code
+        PeakRamMb = $peakRamBytes / 1MB
+        PeakVramMb = $peakVramMb
+        Json = $obj
+        StderrTail = if ($code -ne 0) { ($stderr -split "`n" | Select-Object -Last 6) -join "`n" } else { "" }
+    }
 }
 
-# ---------- run everything ----------
+# ---------- helpers for pretty output ----------
+function Format-Num([object]$v, [string]$fmt = "{0:F2}") {
+    if ($null -eq $v) { return "n/a" }
+    return ($fmt -f [double]$v)
+}
+function Format-Int([object]$v) {
+    if ($null -eq $v) { return "n/a" }
+    return ("{0:F0}" -f [double]$v)
+}
+function Format-Pct([object]$v) {
+    if ($null -eq $v) { return "n/a" }
+    return ("{0:P1}" -f [double]$v)
+}
+
+# ============================================================
+# -Matrix mode
+# ============================================================
+if ($Matrix) {
+    if (-not (Test-Path $MatrixAudio)) {
+        Write-Error "Matrix audio not found: $MatrixAudio"
+        exit 1
+    }
+    $matrixThreads = if ($Threads -gt 0) { $Threads } else { 12 }
+
+    # One switch at a time against a baseline. --threads is always set to
+    # matrixThreads and is not one of the varied switches.
+    $rows = @(
+        [pscustomobject]@{ Label = "baseline";          Args = @()                                  }
+        [pscustomobject]@{ Label = "flash-attn";        Args = @("--flash-attn")                    }
+        [pscustomobject]@{ Label = "no-temp-fallback";  Args = @("--no-temp-fallback")              }
+        [pscustomobject]@{ Label = "beam 5";            Args = @("--beam", "5")                     }
+        [pscustomobject]@{ Label = "audio-ctx 768";     Args = @("--audio-ctx", "768")              }
+    )
+
+    $modes = if ($CpuOnly) { @("CPU") } elseif ($GpuOnly) { @("GPU") } else { @("GPU", "CPU") }
+
+    # Collect rows into a flat list of results.
+    $matrixResults = New-Object System.Collections.Generic.List[object]
+    foreach ($mode in $modes) {
+        $exe = if ($mode -eq "GPU") { $gpuExe } else { $cpuExe }
+        if (-not (Test-Path $exe)) { Write-Warning "Missing $exe"; continue }
+        foreach ($model in $present) {
+            foreach ($row in $rows) {
+                Write-Host ("[matrix] {0} {1} / {2} on {3}" -f $mode, $model.Name, $row.Label, (Split-Path $MatrixAudio -Leaf))
+                $argv = @(
+                    "--model",      $model.Path,
+                    "--model-name", $model.Name,
+                    "--tier",       $model.Tier,
+                    "--audio",      (Resolve-Path $MatrixAudio).Path,
+                    "--threads",    "$matrixThreads"
+                ) + $row.Args
+                if ($vadArg) { $argv += @("--vad-model", $vadArg) }
+
+                $r = Invoke-BenchOnce -Exe $exe -ExtraArgs $argv -Mode $mode -TimeoutSeconds $TimeoutS
+                $matrixResults.Add([pscustomobject]@{
+                    Mode    = $mode
+                    Model   = $model.Name
+                    Row     = $row.Label
+                    Timeout = $r.TimedOut
+                    Ok      = $r.Ok
+                    PeakRam = $r.PeakRamMb
+                    PeakVram = $r.PeakVramMb
+                    Json    = $r.Json
+                    Stderr  = $r.StderrTail
+                })
+                if ($r.TimedOut) { Write-Warning "  timed out" }
+                elseif (-not $r.Ok) { Write-Warning "  exit $($r.ExitCode)" }
+                else {
+                    $j = $r.Json
+                    Write-Host ("  xRT(wall)={0}  whisper_full={1}s  VRAM={2} MB" -f `
+                        (Format-Num $j.rtf_total "{0:F2}"), `
+                        (Format-Num $j.timings.whisper_full_s "{0:F2}"), `
+                        (Format-Int $r.PeakVram))
+                }
+            }
+        }
+    }
+
+    # ---------- matrix table ----------
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add("# SvaraFlow ASR -Matrix")
+    $lines.Add("")
+    $lines.Add("Clip: `$MatrixAudio` = $MatrixAudio  ")
+    $lines.Add("Threads: $matrixThreads  ")
+    $lines.Add("Timeout per leg: ${TimeoutS}s  ")
+    if ($missing.Count -gt 0) { $lines.Add("Skipped (not on disk): $($missing -join ', ').") }
+    $lines.Add("")
+    $lines.Add("| Device | Model | Variant | xRT (wall) | decode | resample | VAD | plan | load | transcribe | whisper_full | post | export | decode_retries | DTW | Peak RAM (MB) | Peak VRAM (MB) | Status |")
+    $lines.Add("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+
+    foreach ($mode in $modes) {
+        foreach ($model in $present) {
+            foreach ($row in $rows) {
+                $cell = $matrixResults | Where-Object {
+                    $_.Mode -eq $mode -and $_.Model -eq $model.Name -and $_.Row -eq $row.Label
+                }
+                if (-not $cell) { continue }
+                if ($cell.Timeout) {
+                    $lines.Add(("| {0} | {1} | {2} | - | - | - | - | - | - | - | - | - | - | - | - | {3} | {4} | timeout |" -f `
+                        $mode, $model.Name, $row.Label, (Format-Int $cell.PeakRam), (Format-Int $cell.PeakVram)))
+                    continue
+                }
+                if (-not $cell.Ok) {
+                    $lines.Add(("| {0} | {1} | {2} | - | - | - | - | - | - | - | - | - | - | - | - | {3} | {4} | failed |" -f `
+                        $mode, $model.Name, $row.Label, (Format-Int $cell.PeakRam), (Format-Int $cell.PeakVram)))
+                    continue
+                }
+                $j = $cell.Json
+                $t = $j.timings
+                $dtw = if ($t.dtw_usable) { "yes" } else { "no" }
+                $retries = if ($null -eq $t.decode_retries) { "n/a" } else { "$($t.decode_retries)" }
+                $lines.Add(("| {0} | {1} | {2} | {3} | {4} | {5} | {6} | {7} | {8} | {9} | {10} | {11} | {12} | {13} | {14} | {15} | {16} | ok |" -f `
+                    $mode, $model.Name, $row.Label, `
+                    (Format-Num $j.rtf_total "{0:F2}"), `
+                    (Format-Num $t.audio_decode_s "{0:F3}"), `
+                    (Format-Num $t.resample_s "{0:F3}"), `
+                    (Format-Num $t.vad_s "{0:F3}"), `
+                    (Format-Num $t.chunk_plan_s "{0:F3}"), `
+                    (Format-Num $t.model_load_s "{0:F3}"), `
+                    (Format-Num $t.transcribe_s "{0:F3}"), `
+                    (Format-Num $t.whisper_full_s "{0:F3}"), `
+                    (Format-Num $t.postprocess_s "{0:F3}"), `
+                    (Format-Num $t.export_s "{0:F3}"), `
+                    $retries, $dtw, `
+                    (Format-Int $cell.PeakRam), `
+                    (Format-Int $cell.PeakVram)))
+            }
+        }
+    }
+
+    $text = $lines -join "`n"
+    $text | Out-File -FilePath $Output -Encoding utf8
+    Write-Host ""
+    Write-Host $text
+    Write-Host ""
+    Write-Host "Wrote $Output"
+    return
+}
+
+# ============================================================
+# Default mode: full sweep
+# ============================================================
+$audioFiles = Get-ChildItem -Path $AudioDir -File |
+    Where-Object { $_.Extension -in ".wav", ".mp4" } |
+    Sort-Object Name
+if ($audioFiles.Count -eq 0) {
+    Write-Error "No .wav or .mp4 files in $AudioDir"
+    exit 1
+}
+
 $results = New-Object System.Collections.Generic.List[object]
 $modes = if ($CpuOnly) { @("CPU") } elseif ($GpuOnly) { @("GPU") } else { @("GPU", "CPU") }
 
 foreach ($mode in $modes) {
     $exe = if ($mode -eq "GPU") { $gpuExe } else { $cpuExe }
-    if (-not (Test-Path $exe)) {
-        Write-Warning "Missing $exe; skipping $mode"
-        continue
-    }
+    if (-not (Test-Path $exe)) { Write-Warning "Missing $exe; skipping $mode"; continue }
     foreach ($model in $present) {
         foreach ($audio in $audioFiles) {
             $stem      = [System.IO.Path]::GetFileNameWithoutExtension($audio.Name)
             $reference = Join-Path $audio.DirectoryName "$stem.txt"
             if (-not (Test-Path $reference)) { $reference = $null }
-
             $timing = Join-Path $TimingDir "$stem.json"
             if (-not (Test-Path $timing)) { $timing = $null }
 
             Write-Host ("[{0}] {1} on {2}" -f $mode, $model.Name, $audio.Name)
-            $r = Invoke-Bench -Exe $exe -Model $model -AudioPath $audio.FullName `
-                -Reference $reference -Timing $timing -Mode $mode -Vad $vadArg -Threads $Threads
-            if ($r) { $results.Add($r) }
+            $argv = @(
+                "--model",      $model.Path,
+                "--model-name", $model.Name,
+                "--tier",       $model.Tier,
+                "--audio",      $audio.FullName,
+                "--threads",    "$Threads"
+            )
+            if ($reference) { $argv += @("--reference", $reference) }
+            if ($timing)    { $argv += @("--timing", $timing) }
+            if ($vadArg)    { $argv += @("--vad-model", $vadArg) }
+
+            $r = Invoke-BenchOnce -Exe $exe -ExtraArgs $argv -Mode $mode -TimeoutSeconds $TimeoutS
+            if ($r.Ok) {
+                $r.Json | Add-Member -NotePropertyName mode -NotePropertyValue $mode -Force
+                $r.Json | Add-Member -NotePropertyName peak_ram_mb_os -NotePropertyValue $r.PeakRamMb -Force
+                $r.Json | Add-Member -NotePropertyName peak_vram_mb -NotePropertyValue $r.PeakVramMb -Force
+                $results.Add($r.Json)
+            } else {
+                Write-Warning "bench-asr failed for $($model.Name) / $($audio.Name)"
+                if ($r.StderrTail) { Write-Warning $r.StderrTail }
+            }
         }
     }
 }
 
-# ---------- aggregate ----------
 $lines = New-Object System.Collections.Generic.List[string]
 $lines.Add("# SvaraFlow ASR benchmark")
 $lines.Add("")
-if ($missing.Count -gt 0) {
-    $lines.Add("Skipped (not on disk): $($missing -join ', ').")
-    $lines.Add("")
-}
-if ($Threads -gt 0) {
-    $lines.Add("CPU runs used $Threads decoder threads; GPU runs are unaffected.")
-    $lines.Add("")
-}
-$lines.Add("| Model | Mode | Speed (xRT) | Load (s) | Peak RAM (MB) | Peak VRAM (MB) | WER | Median word offset (ms) | Estimated words |")
-$lines.Add("|---|---|---|---|---|---|---|---|---|")
+if ($missing.Count -gt 0) { $lines.Add("Skipped (not on disk): $($missing -join ', ')."); $lines.Add("") }
+if ($Threads -gt 0) { $lines.Add("CPU runs used $Threads decoder threads; GPU runs are unaffected."); $lines.Add("") }
+$lines.Add("| Model | Mode | xRT (wall) | Load (s) | Peak RAM (MB) | Peak VRAM (MB) | WER | Median word offset (ms) | Estimated words | DTW |")
+$lines.Add("|---|---|---|---|---|---|---|---|---|---|")
 
 foreach ($model in $present) {
     foreach ($mode in $modes) {
         $subset = @($results | Where-Object { $_.model -eq $model.Name -and $_.mode -eq $mode })
         if ($subset.Count -eq 0) { continue }
-
-        $avgRtf  = ($subset | Measure-Object -Property rtf_total      -Average).Average
-        $avgLoad = ($subset | Measure-Object -Property load_s         -Average).Average
+        $avgRtf  = ($subset | Measure-Object -Property rtf_total -Average).Average
+        $avgLoad = ($subset | Measure-Object -Property load_s -Average).Average
         $avgRam  = ($subset | Measure-Object -Property peak_ram_mb_os -Average).Average
-
         $vram = @($subset | Where-Object { $_.peak_vram_mb -ne $null } | ForEach-Object { $_.peak_vram_mb })
-        $vramStr = if ($vram.Count -gt 0) {
-            "{0:F0}" -f (($vram | Measure-Object -Average).Average)
-        } else { "n/a" }
-
+        $vramStr = if ($vram.Count -gt 0) { "{0:F0}" -f (($vram | Measure-Object -Average).Average) } else { "n/a" }
         $wers = @($subset | Where-Object { $_.wer -ne $null } | ForEach-Object { $_.wer })
-        $werStr = if ($wers.Count -gt 0) {
-            "{0:P1}" -f (($wers | Measure-Object -Average).Average)
-        } else { "n/a" }
-
+        $werStr = if ($wers.Count -gt 0) { "{0:P1}" -f (($wers | Measure-Object -Average).Average) } else { "n/a" }
         $offs = @($subset | Where-Object { $_.median_word_offset_ms -ne $null } | ForEach-Object { $_.median_word_offset_ms })
-        $offStr = if ($offs.Count -gt 0) {
-            "{0:F1}" -f (($offs | Measure-Object -Average).Average)
-        } else { "n/a" }
-
+        $offStr = if ($offs.Count -gt 0) { "{0:F1}" -f (($offs | Measure-Object -Average).Average) } else { "n/a" }
         $estTotal  = ($subset | Measure-Object -Property estimated_words -Sum).Sum
         $wordTotal = ($subset | Measure-Object -Property total_words     -Sum).Sum
-        $estStr = if ($wordTotal -gt 0) {
-            "{0:P0} ({1}/{2})" -f ($estTotal / $wordTotal), $estTotal, $wordTotal
-        } else { "n/a" }
+        $estStr = if ($wordTotal -gt 0) { "{0:P0} ({1}/{2})" -f ($estTotal / $wordTotal), $estTotal, $wordTotal } else { "n/a" }
+        $dtwYes = ($subset | Where-Object { $_.timings.dtw_usable } | Measure-Object).Count
+        $dtwStr = if ($dtwYes -gt 0) { "yes" } else { "no" }
 
-        $lines.Add(("| {0} | {1} | {2:F2} | {3:F2} | {4:F0} | {5} | {6} | {7} | {8} |" -f `
-            $model.Name, $mode, $avgRtf, $avgLoad, $avgRam, $vramStr, $werStr, $offStr, $estStr))
+        $lines.Add(("| {0} | {1} | {2:F2} | {3:F2} | {4:F0} | {5} | {6} | {7} | {8} | {9} |" -f `
+            $model.Name, $mode, $avgRtf, $avgLoad, $avgRam, $vramStr, $werStr, $offStr, $estStr, $dtwStr))
     }
 }
 
