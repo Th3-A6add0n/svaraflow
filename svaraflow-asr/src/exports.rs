@@ -15,8 +15,7 @@
 
 use crate::transcribe::{Segment, Transcript};
 
-/// Newline used in every export. Both SRT and VTT permit `\n`; ASS parsers
-/// on all major platforms accept it.
+/// Newline used in every export.
 const NL: &str = "\n";
 
 /// Formats `seconds` as `HH:MM:SS,mmm` for SRT.
@@ -56,10 +55,6 @@ pub fn ass_time(seconds: f64) -> String {
 }
 
 /// Writes an SRT file.
-///
-/// Each segment becomes one cue. Cue text is the segment's words joined by
-/// a single space, with no wrapping. Line breaks inside a cue are not
-/// inserted; the player handles wrapping.
 #[must_use]
 pub fn write_srt(transcript: &Transcript) -> String {
     let mut out = String::new();
@@ -105,9 +100,10 @@ pub fn write_vtt(transcript: &Transcript) -> String {
 /// Writes an ASS file with karaoke word highlighting.
 ///
 /// Every word is prefixed with `{\kf<cs>}` where `<cs>` is the word's
-/// duration in centiseconds. The sum of the durations is forced to equal
-/// the dialogue line's total duration, so a player that advances karaoke
-/// on the sum stays in sync with the line.
+/// duration in centiseconds. The last word's duration is extended so the
+/// sum of the durations equals the dialogue line's total duration. That
+/// keeps a player that advances karaoke on the sum in sync with the line:
+/// the sweep ends exactly when the subtitle disappears.
 ///
 /// # Characters
 ///
@@ -143,7 +139,6 @@ pub fn write_ass(transcript: &Transcript, title: &str) -> String {
          Alignment, MarginL, MarginR, MarginV, Encoding",
     );
     out.push_str(NL);
-    // White primary, greenish secondary for the karaoke sweep highlight.
     out.push_str(
         "Style: Default,Arial,48,&H00FFFFFF,&H0000FF00,&H00000000,\
          &H00000000,0,0,0,0,100,100,0,0,1,2,1,2,40,40,40,1",
@@ -164,7 +159,6 @@ pub fn write_ass(transcript: &Transcript, title: &str) -> String {
             if seg.text.trim().is_empty() {
                 continue;
             }
-            // No word-level timing: emit the segment as one karaoke block.
             let total_cs = ((seg.end_s - seg.start_s).max(0.0) * 100.0).round() as u64;
             let text = ass_escape(seg.text.trim());
             out.push_str(&format!(
@@ -176,7 +170,7 @@ pub fn write_ass(transcript: &Transcript, title: &str) -> String {
             continue;
         }
 
-        let text = karaoke_text(&seg.words);
+        let text = karaoke_text(seg);
         out.push_str(&format!(
             "Dialogue: 0,{start},{end},Default,,0,0,0,,{text}",
             start = ass_time(seg.start_s),
@@ -201,15 +195,19 @@ fn cue_text(seg: &Segment) -> String {
     }
 }
 
-/// Renders a segment's words as a sequence of `{\kfN}word` pairs, with the
-/// last word's duration adjusted so the total matches the segment's span.
-fn karaoke_text(words: &[crate::transcribe::Word]) -> String {
+/// Renders a segment's words as a sequence of `{\kfN}word` pairs.
+///
+/// The total karaoke duration is the segment's span (`end_s - start_s`),
+/// not the sum of the words' individual durations. The last word is
+/// extended to absorb the difference, so the karaoke sweep ends when the
+/// subtitle line does.
+fn karaoke_text(seg: &Segment) -> String {
+    let words = &seg.words;
     if words.is_empty() {
         return String::new();
     }
-    let span_start = words.first().map(|w| w.start_s).unwrap_or(0.0);
-    let span_end = words.last().map(|w| w.end_s).unwrap_or(span_start);
-    let total_cs = ((span_end - span_start).max(0.0) * 100.0).round() as i64;
+
+    let total_cs = ((seg.end_s - seg.start_s).max(0.0) * 100.0).round() as i64;
 
     let mut durations: Vec<i64> = words
         .iter()
@@ -235,10 +233,6 @@ fn ass_escape(s: &str) -> String {
 }
 
 /// Writes the transcript JSON documented in `docs/SCHEMAS.md`.
-///
-/// The shape is flat and versioned. It includes both segments (for cue
-/// granularity) and a top-level `words` array (for word-level consumers
-/// that would otherwise have to flatten).
 ///
 /// # Errors
 ///
@@ -373,21 +367,25 @@ mod tests {
     fn srt_time_formats_known_values() {
         assert_eq!(srt_time(0.0), "00:00:00,000");
         assert_eq!(srt_time(1.0), "00:00:01,000");
-        assert_eq!(srt_time(1.2345), "00:00:01,234"); // rounds down
+        assert_eq!(srt_time(1.5), "00:00:01,500");
         assert_eq!(srt_time(61.5), "00:01:01,500");
         assert_eq!(srt_time(3661.001), "01:01:01,001");
+        // 1.2346 * 1000 = 1234.6, round() rounds half away from zero.
+        assert_eq!(srt_time(1.2346), "00:00:01,235");
+        // 1.2344 * 1000 = 1234.4, rounds down.
+        assert_eq!(srt_time(1.2344), "00:00:01,234");
     }
 
     #[test]
     fn vtt_time_uses_period() {
-        assert_eq!(vtt_time(1.234), "00:00:01.234");
+        assert_eq!(vtt_time(1.5), "00:00:01.500");
         assert_eq!(vtt_time(0.0), "00:00:00.000");
     }
 
     #[test]
     fn ass_time_uses_centiseconds() {
         assert_eq!(ass_time(0.0), "0:00:00.00");
-        assert_eq!(ass_time(1.234), "0:00:01.23");
+        assert_eq!(ass_time(1.5), "0:00:01.50");
         assert_eq!(ass_time(61.5), "0:01:01.50");
     }
 
@@ -415,13 +413,17 @@ mod tests {
         assert!(out.contains("Title: Test"), "{out}");
         assert!(out.contains("[V4+ Styles]"), "{out}");
         assert!(out.contains("[Events]"), "{out}");
-        assert!(out.contains("Dialogue: 0,0:00:00.00,0:00:02.50,Default"), "{out}");
+        assert!(
+            out.contains("Dialogue: 0,0:00:00.00,0:00:02.50,Default"),
+            "{out}"
+        );
     }
 
     #[test]
     fn ass_karaoke_durations_sum_to_line_duration() {
         let out = write_ass(&sample(), "Test");
-        // First line spans 0.0 to 2.5 s = 250 cs. "Hello" is 100, "world" is 150.
+        // First line spans 0.0 to 2.5 s = 250 cs. "Hello" is 100 cs,
+        // "world" would be 150 cs, sum = 250 = line duration.
         assert!(out.contains("{\\kf100}Hello {\\kf150}world"), "{out}");
     }
 
@@ -436,12 +438,14 @@ mod tests {
 
     #[test]
     fn ass_karaoke_adjusts_last_word_to_match_total() {
+        // A segment whose line span (3.0 s) is longer than the words'
+        // span (0.0 to 1.0 s). The last word must be extended so the
+        // karaoke sum matches the line: 50 cs for "a", 250 cs for "b".
         let mut t = sample();
-        // Make the words' durations sum to less than the segment span.
         t.segments[0].words = vec![word("a", 0.0, 0.5), word("b", 0.5, 1.0)];
-        t.segments[0].end_s = 3.0; // segment is longer than last word's end
+        t.segments[0].start_s = 0.0;
+        t.segments[0].end_s = 3.0;
         let out = write_ass(&t, "Test");
-        // First word 50 cs, last adjusted to fill the remaining 250.
         assert!(out.contains("{\\kf50}a {\\kf250}b"), "{out}");
     }
 

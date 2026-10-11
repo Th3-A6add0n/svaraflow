@@ -14,7 +14,7 @@
 //! invalidates the whole cache silently: the caller simply sees a miss.
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -29,9 +29,7 @@ use crate::transcribe::{DecodeStrategy, Segment, TranscribeConfig, Transcript, W
 /// Cache schema version. Bump when the on-disk shape changes.
 pub const CACHE_VERSION: u32 = 1;
 
-/// How many hex characters of each hash appear in the filename. Eight hex
-/// characters is 32 bits; collisions between different audio files with
-/// the same settings are astronomically unlikely at this scale.
+/// How many hex characters of each hash appear in the filename.
 const FILENAME_HASH_PREFIX: usize = 16;
 
 /// A cache key: audio identity plus everything that affects output.
@@ -54,10 +52,6 @@ impl CacheKey {
 }
 
 /// Hashes the audio samples and sample rate.
-///
-/// Sample rate is included so that a 16 kHz and a 48 kHz version of the
-/// same waveform never collide, even though the engine would reject the
-/// latter anyway.
 #[must_use]
 pub fn hash_audio(audio: &MonoAudio) -> String {
     let mut hasher = Sha256::new();
@@ -72,11 +66,6 @@ pub fn hash_audio(audio: &MonoAudio) -> String {
 }
 
 /// Hashes the model name and every setting that changes the output.
-///
-/// Deliberately excludes `tier`: two manifest entries with the same model
-/// file but different tier labels should share a cache entry. Includes the
-/// effective prompt, because an initial prompt changes what whisper.cpp
-/// decodes even with identical audio.
 #[must_use]
 pub fn hash_settings(model: &str, cfg: &TranscribeConfig) -> String {
     let decode = match cfg.decode {
@@ -298,9 +287,6 @@ impl CachedTranscript {
 }
 
 /// Loads a cache entry for `key`, or `None` on any miss.
-///
-/// A missing file, malformed JSON, and a version mismatch all return
-/// `None`. The cache is never treated as authoritative.
 #[must_use]
 pub fn load(key: &CacheKey) -> Option<Transcript> {
     let path = path_for(key);
@@ -326,8 +312,6 @@ pub fn save(key: &CacheKey, transcript: &Transcript) -> Result<(), AsrError> {
     let cached = CachedTranscript::from_transcript(transcript, key);
     let json = serde_json::to_string(&cached)?;
     let path = dir.join(format!("{}.json", key.as_filename()));
-    // Write via a temp file so a crash mid-write does not leave a partial
-    // entry that a later lookup would try to parse.
     let tmp = path.with_extension("json.part");
     fs::write(&tmp, json)?;
     fs::rename(&tmp, &path)?;

@@ -1,15 +1,12 @@
 //! CMX3600 EDL export.
 //!
-//! A fallback for hosts that cannot import FCP7 XML, and for users who want
-//! a plain-text cut list. One event per keep range; the source reel is
-//! always `AX` because the sources are files, not tapes.
+//! One event per keep range; the source reel is always `AX` because the
+//! sources are files, not tapes.
 //!
 //! # Timecode format
 //!
 //! Non-drop-frame rates use `HH:MM:SS:FF`; drop-frame rates use
-//! `HH:MM:SS;FF`. The FCM header says which. Drop-frame arithmetic skips
-//! frame numbers 0 and 1 at the start of every minute except every tenth
-//! minute, per SMPTE 12M.
+//! `HH:MM:SS;FF`. The FCM header says which.
 //!
 //! # Scope
 //!
@@ -22,10 +19,6 @@ use crate::silence::SilenceRanges;
 use crate::timeline::{Fps, Timeline};
 
 /// Writes a CMX3600 EDL for `timeline` cut with `ranges`.
-///
-/// `original_name` is used as the EDL's `TITLE:` line. `source_in` is the
-/// source timecode of the first frame of the timeline, in frames; pass `0`
-/// unless the original sequence starts at a non-zero timecode.
 ///
 /// # Errors
 ///
@@ -53,8 +46,6 @@ pub fn write_edl(
     });
     out.push('\n');
 
-    // Destination timecode cursor. Remove mode concatenates keep ranges
-    // from 0, so the destination advances by each keep range's length.
     let mut dest_start = 0i64;
     for (i, keep) in ranges.keep.iter().enumerate() {
         let event = i + 1;
@@ -78,8 +69,6 @@ pub fn write_edl(
 }
 
 /// Formats `frames` as a CMX timecode at `fps`.
-///
-/// Drop-frame rates use `;` before the frame field. Non-drop uses `:`.
 #[must_use]
 pub fn format_timecode(frames: i64, fps: Fps, drop_frame: bool) -> String {
     let separator = if drop_frame { ';' } else { ':' };
@@ -98,7 +87,9 @@ pub fn format_timecode(frames: i64, fps: Fps, drop_frame: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::silence::{FrameRange, SilenceStats, SilenceWarning};
+    use crate::silence::{
+        AnalysisReport, FrameRange, NoiseSource, SilenceStats, SilenceWarning,
+    };
     use crate::timeline::{Clip, Fps, Track, TrackKind};
 
     fn timeline_30() -> Timeline {
@@ -143,6 +134,7 @@ mod tests {
             },
             noise_db: -50.0,
             warnings: Vec::<SilenceWarning>::new(),
+            report: AnalysisReport::empty(-50.0, NoiseSource::Manual),
         }
     }
 
@@ -164,7 +156,6 @@ mod tests {
 
     #[test]
     fn timecode_one_hour_at_30() {
-        // 30 fps * 60 s * 60 min = 108_000 frames.
         assert_eq!(
             format_timecode(108_000, Fps { num: 30, den: 1 }, false),
             "01:00:00:00"
@@ -174,14 +165,7 @@ mod tests {
     #[test]
     fn timecode_drop_frame_uses_semicolon() {
         assert_eq!(
-            format_timecode(
-                30,
-                Fps {
-                    num: 30_000,
-                    den: 1001
-                },
-                true
-            ),
+            format_timecode(30, Fps { num: 30_000, den: 1001 }, true),
             "00:00:01;00"
         );
     }
@@ -217,8 +201,6 @@ mod tests {
             300,
         );
         let edl = write_edl(&tl, &r, "x").unwrap();
-        // First event: source [0, 100) -> destination [0, 100).
-        // Second event: source [200, 300) -> destination [100, 200).
         assert!(edl.contains("00:00:00:00 00:00:03:10 00:00:00:00 00:00:03:10"));
         assert!(edl.contains("00:00:06:20 00:00:10:00 00:00:03:10 00:00:06:20"));
     }
@@ -240,6 +222,6 @@ mod tests {
         let r = ranges(vec![], vec![FrameRange::new(0, 300)], 300);
         let edl = write_edl(&tl, &r, "x").unwrap();
         let lines: Vec<&str> = edl.lines().collect();
-        assert_eq!(lines.len(), 3); // TITLE, FCM, blank
+        assert_eq!(lines.len(), 3);
     }
 }

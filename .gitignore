@@ -50,6 +50,13 @@ Thumbs.db
 !/tests/audio/fixtures/
 /tests/audio/fixtures/*
 !/tests/audio/fixtures/README.md
+/tests/*.srt
+/tests/*.vtt
+/tests/*.ass
+/tests/*.edl
+/tests/*.xml
+/tests/report_*.json
 
 # Tooling
 /tools/.cache/
+/tools/.venv

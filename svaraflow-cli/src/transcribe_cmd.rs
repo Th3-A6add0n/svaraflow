@@ -1,7 +1,7 @@
 //! `svaraflow-cli transcribe` and `svaraflow-cli models`.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 
 use anyhow::{anyhow, Context, Result};
 use svaraflow_asr::{
@@ -24,7 +24,6 @@ const DEFAULT_VAD_MODEL: &str = "models/silero_vad_v5.onnx";
 pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
     let manifest = Manifest::load_embedded().map_err(|e| anyhow!("{e}"))?;
 
-    // Resolve the tier.
     let light_path = models::path_for(manifest.for_tier(Tier::Light)?);
     let standard_path = models::path_for(manifest.for_tier(Tier::Standard)?);
     let light_present = light_path.exists();
@@ -34,7 +33,10 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
         TierArg::Light => Tier::Light,
         TierArg::Standard => Tier::Standard,
         TierArg::Auto => {
-            let vad_path = args.vad_model.as_deref().or(Some(Path::new(DEFAULT_VAD_MODEL)));
+            let vad_path = args
+                .vad_model
+                .as_deref()
+                .or(Some(Path::new(DEFAULT_VAD_MODEL)));
             let choice = bench::pick_tier(&manifest, light_present, standard_present, vad_path)?;
             eprintln!("tier: {} ({})", choice.tier.as_str(), choice.reason);
             if let Some(rtf) = choice.rtf {
@@ -56,7 +58,6 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
         ));
     }
 
-    // Load the input audio.
     eprintln!("reading {}", args.input.display());
     let audio = load_audio(&args.input)?;
     eprintln!(
@@ -66,12 +67,13 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
         audio.len()
     );
 
-    // Build the config.
-    let mut cfg = TranscribeConfig {
+    let cfg = TranscribeConfig {
         tier,
         language: parse_language(&args.language)?,
         decode: match args.beam {
-            Some(n) if n > 1 => DecodeStrategy::BeamSearch { beam_size: n as i32 },
+            Some(n) if n > 1 => DecodeStrategy::BeamSearch {
+                beam_size: n as i32,
+            },
             _ => DecodeStrategy::Greedy,
         },
         use_dtw: !args.no_dtw,
@@ -89,7 +91,6 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
         eprintln!("DTW disabled; word timing will be proportional and flagged as estimated");
     }
 
-    // Cache lookup.
     let key = cache::key_for(&audio, &entry.name, &cfg);
     let mut transcript = if args.no_cache {
         None
@@ -105,7 +106,10 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
             t.elapsed_s
         );
     } else {
-        let vad_path = args.vad_model.clone().unwrap_or_else(|| PathBuf::from(DEFAULT_VAD_MODEL));
+        let vad_path = args
+            .vad_model
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(DEFAULT_VAD_MODEL));
         let vad_arg = if vad_path.exists() {
             Some(vad_path.as_path())
         } else {
@@ -133,7 +137,6 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
             }
         };
 
-        let started = std::time::Instant::now();
         match engine.transcribe(&audio, &mut progress, &cancel) {
             Ok(t) => transcript = Some(t),
             Err(AsrError::Cancelled) => {
@@ -142,7 +145,6 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
             }
             Err(e) => return Err(anyhow!("transcription failed: {e}")),
         }
-        let _ = started;
 
         if let Some(t) = &transcript {
             if !args.no_cache {
@@ -155,13 +157,11 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
 
     let t = transcript.ok_or_else(|| anyhow!("no transcript produced"))?;
 
-    // Print the real-time factor (the spec's required output).
     println!(
         "real-time factor: {:.2}x ({:.2} s audio in {:.2} s)",
         t.real_time_factor, t.audio_duration_s, t.elapsed_s
     );
 
-    // Estimated words warning.
     let estimated = t.words().iter().filter(|w| w.estimated).count();
     if estimated > 0 {
         eprintln!(
@@ -171,15 +171,13 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
         );
     }
 
-    // Write the requested outputs.
     if args.json || args.out_json.is_some() {
         let json = exports::write_json(&t)?;
         if args.json && args.out_json.is_none() {
             println!("{json}");
         }
         if let Some(path) = &args.out_json {
-            std::fs::write(path, &json)
-                .with_context(|| format!("writing {}", path.display()))?;
+            std::fs::write(path, &json).with_context(|| format!("writing {}", path.display()))?;
             eprintln!("wrote {}", path.display());
         }
     }
@@ -223,8 +221,8 @@ pub fn run_models(cli: ModelsCli) -> Result<()> {
 
 fn list_models(manifest: &Manifest) -> Result<()> {
     println!(
-        "{:<36} {:<10} {:>10} {:<14} {}",
-        "NAME", "TIER", "ON DISK", "QUANT", "LICENSE"
+        "{:<36} {:<10} {:>10} {:<14} LICENSE",
+        "NAME", "TIER", "ON DISK", "QUANT",
     );
     for m in &manifest.models {
         let path = models::path_for(m);
@@ -290,12 +288,17 @@ fn download_model(manifest: &Manifest, args: &ModelsDownloadArgs) -> Result<()> 
     let mut last_percent = -1i32;
     let mut progress = |written: u64, total: Option<u64>| {
         if let Some(t) = total {
-            if t > 0 {
-                let pct = ((written * 100) / t) as i32;
-                if pct != last_percent {
-                    last_percent = pct;
-                    eprint!("\r  {pct}% ({:.1} MB / {:.1} MB)", written as f64 / 1_048_576.0, t as f64 / 1_048_576.0);
-                }
+            let pct = written
+                .checked_mul(100)
+                .and_then(|scaled| scaled.checked_div(t))
+                .map_or(0, |v| v as i32);
+            if pct != last_percent {
+                last_percent = pct;
+                eprint!(
+                    "\r  {pct}% ({:.1} MB / {:.1} MB)",
+                    written as f64 / 1_048_576.0,
+                    t as f64 / 1_048_576.0
+                );
             }
         } else {
             eprint!("\r  {:.1} MB", written as f64 / 1_048_576.0);
@@ -313,7 +316,6 @@ fn hash_model(args: &ModelsHashArgs) -> Result<()> {
         return Err(anyhow!("file does not exist: {}", args.file.display()));
     }
     let h = models::hash_file(&args.file).map_err(|e| anyhow!("{e}"))?;
-    // Match the `sha256sum` output shape: `<hash>  <path>`.
     println!("{h}  {}", args.file.display());
     Ok(())
 }
@@ -321,7 +323,11 @@ fn hash_model(args: &ModelsHashArgs) -> Result<()> {
 fn remove_model(manifest: &Manifest, args: &ModelsRemoveArgs) -> Result<()> {
     let entry = manifest
         .by_name(&args.name)
-        .or_else(|| Tier::parse(&args.name).ok().and_then(|t| manifest.for_tier(t).ok()))
+        .or_else(|| {
+            Tier::parse(&args.name)
+                .ok()
+                .and_then(|t| manifest.for_tier(t).ok())
+        })
         .ok_or_else(|| anyhow!("no model named `{}`", args.name))?;
     let removed = models::remove_model(entry).map_err(|e| anyhow!("{e}"))?;
     if removed {
@@ -363,30 +369,6 @@ fn parse_language(s: &str) -> Result<LanguageHint> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// unused helpers kept for API symmetry
-// ---------------------------------------------------------------------------
-
-/// Reports cache status. Useful for a future `cache` subcommand.
-#[allow(dead_code)]
-pub fn cache_status() -> (usize, u64) {
-    (cache::entry_count(), cache::size_bytes())
-}
-
-/// Clears the transcript cache. Useful for a future `cache clear`.
-#[allow(dead_code)]
-pub fn clear_cache() -> Result<usize> {
-    cache::clear().map_err(|e| anyhow!("{e}"))
-}
-
-#[allow(dead_code)]
-fn _order_guard() {
-    // Silence unused import warnings for `Ordering`; it is used in the
-    // transcribe path but rustc's reachability analysis over feature
-    // combinations can miss it.
-    let _ = Ordering::Relaxed;
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,10 +384,5 @@ mod tests {
     #[test]
     fn parse_language_rejects_unknown() {
         assert!(parse_language("fr").is_err());
-    }
-
-    #[test]
-    fn cache_status_does_not_panic() {
-        let _ = cache_status();
     }
 }

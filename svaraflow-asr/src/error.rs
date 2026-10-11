@@ -130,6 +130,15 @@ pub enum AsrError {
     #[error("transcription cancelled")]
     Cancelled,
 
+    // --- cross-crate ------------------------------------------------------
+
+    /// An error from `svaraflow-core`.
+    ///
+    /// Most commonly raised by the VAD trait, whose
+    /// `speech_probabilities` returns [`svaraflow_core::error::CoreError`].
+    #[error("core: {0}")]
+    Core(#[from] svaraflow_core::error::CoreError),
+
     // --- io ---------------------------------------------------------------
 
     /// Underlying I/O failure.

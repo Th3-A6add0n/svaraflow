@@ -1,315 +1,606 @@
+# tools/convert-model.ps1
 <#
 .SYNOPSIS
-    Converts a Hugging Face Whisper checkpoint to GGML and optionally
-    quantizes it, using whisper.cpp's own conversion scripts.
+    Converts an Oriserve Whisper-Hindi2Hinglish checkpoint to GGML and
+    optionally quantizes it.
 
 .DESCRIPTION
-    Wraps `whisper.cpp/models/convert-h5-to-ggml.py` and the `quantize`
-    binary that whisper.cpp builds. Handles the common failure mode where a
-    HF checkpoint stores weights as bfloat16 and whisper.cpp's converter
-    calls `.numpy()` on them: the script first re-saves every tensor as
-    float32 in a scratch copy, then runs the converter against that copy.
+    End-to-end conversion of either Oriserve model to a whisper.cpp-compatible
+    GGML file. See tools/README.md for full usage.
 
-    Also prints the SHA-256 and byte size of the output, ready to paste
-    into `models.json` and `models.json`'s `size_bytes`.
-
-.PARAMETER RepoId
-    Hugging Face repo, e.g. `Oriserve/Whisper-Hindi2Hinglish-Swift`. The
-    script downloads it with `huggingface-cli download`. Mutually exclusive
-    with `-ModelDir`.
-
-.PARAMETER ModelDir
-    A local directory that already contains a downloaded HF checkpoint
-    (`pytorch_model.bin` or `model.safetensors` plus `config.json` and
-    tokenizer files). Mutually exclusive with `-RepoId`.
-
-.PARAMETER OutputName
-    Base name for the output GGML file, without the `.bin` extension. The
-    script appends `.bin` and, when quantizing, `-<quant>.bin`.
-
-.PARAMETER Quantize
-    Quantization to apply. `f16` is no quantization. Default `q5_0` matches
-    the Standard tier.
-
-.PARAMETER WhisperCppPath
-    Path to a whisper.cpp checkout that has been built. The script uses
-    `<path>/models/convert-h5-to-ggml.py` and `<path>/build/bin/quantize`
-    (`quantize.exe` on Windows).
-
-.PARAMETER WorkDir
-    Scratch directory for the float32-converted checkpoint. Created if
-    missing.
-
-.EXAMPLE
-    # Standard tier: whisper.cpp already ships a converter for large-v3-turbo
-    # derivatives.
-    pwsh tools/convert-model.ps1 `
-        -RepoId "Oriserve/Whisper-Hindi2Hinglish-Swift" `
-        -OutputName "ggml-hindi2hinglish-swift" `
-        -Quantize f16
-
-.EXAMPLE
-    # If you already downloaded the checkpoint:
-    pwsh tools/convert-model.ps1 `
-        -ModelDir "C:\hf\Whisper-Hindi2Hinglish-Swift" `
-        -OutputName "ggml-hindi2hinglish-swift" `
-        -Quantize q5_0
+    This file is delivered in full on each change; do not diff it against a
+    previous version, replace it entirely.
 #>
-[CmdletBinding(DefaultParameterSetName = 'Repo')]
+[CmdletBinding()]
 param(
-    [Parameter(Mandatory, ParameterSetName = 'Repo')]
-    [string] $RepoId,
-
-    [Parameter(Mandatory, ParameterSetName = 'Local')]
-    [string] $ModelDir,
-
     [Parameter(Mandatory)]
-    [string] $OutputName,
+    [ValidateSet('Swift', 'Apex')]
+    [string] $Model,
 
-    [ValidateSet('f16', 'f32', 'q8_0', 'q5_0', 'q5_1', 'q4_0', 'q4_1')]
-    [string] $Quantize = 'q5_0',
+    [ValidateSet('none', 'q5_0', 'q8_0')]
+    [string] $Quant = 'q5_0',
 
-    [string] $WhisperCppPath = '..\whisper.cpp',
+    [string] $WhisperCppDir,
 
-    [string] $WorkDir = '.\tools\.cache\convert'
+    [string] $OpenAIWhisperDir,
+
+    [string] $OutDir,
+
+    [string] $Python = 'python',
+
+    [switch] $SkipSanityTest
 )
 
 $ErrorActionPreference = 'Stop'
 
-# ---------------------------------------------------------------------------
-# helpers
-# ---------------------------------------------------------------------------
-
-function Write-Step {
-    param([string] $Message)
-    Write-Host "==> $Message" -ForegroundColor Cyan
+$models = @{
+    Swift = @{
+        RepoId      = 'Oriserve/Whisper-Hindi2Hinglish-Swift'
+        RepoCommit  = '28c045e53a283e9ae3332de21050bf8155e8ff2b'
+        FilePrefix  = 'ggml-hinglish-swift'
+        License     = 'Apache-2.0'
+        Description = 'Whisper-base-sized Hindi-to-Hinglish model. Fast, lower accuracy.'
+        QuantForF16 = 'f16'
+    }
+    Apex = @{
+        RepoId      = 'Oriserve/Whisper-Hindi2Hinglish-Apex'
+        RepoCommit  = 'f3214eed20b4e4d4144e739982d911f87b9cb223'
+        FilePrefix  = 'ggml-hinglish-apex'
+        License     = 'Apache-2.0'
+        Description = 'Large-v3-turbo-based Hindi-to-Hinglish model. Slower, higher accuracy.'
+        QuantForF16 = 'q5_0'
+    }
 }
 
-function Write-Ok {
-    param([string] $Message)
-    Write-Host "    $Message" -ForegroundColor Green
+$modelInfo = $models[$Model]
+
+function Write-Step { param([string] $M) Write-Host "==> $M" -ForegroundColor Cyan }
+function Write-Ok   { param([string] $M) Write-Host "    $M" -ForegroundColor Green }
+function Write-Warn { param([string] $M) Write-Host "    $M" -ForegroundColor Yellow }
+function Fail       { param([string] $M) throw $M }
+
+function Require-Command {
+    param([string] $Name, [string] $Hint)
+    if (-not (Get-Command -Name $Name -ErrorAction SilentlyContinue)) {
+        Fail "``$Name`` was not found on PATH.$Hint"
+    }
 }
 
-function Write-Warn {
-    param([string] $Message)
-    Write-Host "    $Message" -ForegroundColor Yellow
+function ConvertTo-PythonString {
+    param([string] $Path)
+    $normalized = $Path -replace '\\', '/'
+    $escaped = $normalized -replace "'", "\\'"
+    return "'$escaped'"
+}
+
+function Get-FreeBytes {
+    param([string] $Path)
+    $full = [System.IO.Path]::GetFullPath($Path)
+    $root = [System.IO.Path]::GetPathRoot($full)
+    $drive = (Get-Item -LiteralPath $root).PSDrive.Name
+    $psDrive = Get-PSDrive -Name $drive
+    return [int64]$psDrive.Free
+}
+
+function Find-WhisperBinary {
+    param([string] $Root, [string[]] $Names)
+    $dirs = @(
+        'build\bin\Release',
+        'build\bin\RelWithDebInfo',
+        'build\bin',
+        'build\Release',
+        'build',
+        'build\examples\Release',
+        'build\examples'
+    )
+    foreach ($dir in $dirs) {
+        foreach ($name in $Names) {
+            foreach ($ext in @('.exe', '')) {
+                $p = Join-Path (Join-Path $Root $dir) ($name + $ext)
+                if (Test-Path -LiteralPath $p) { return $p }
+            }
+        }
+    }
+    $buildDir = Join-Path $Root 'build'
+    if (Test-Path -LiteralPath $buildDir) {
+        $found = @(Get-ChildItem -Path $buildDir -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.BaseName -in $Names -and
+                ($_.Extension -eq '' -or $_.Extension -eq '.exe')
+            } |
+            Sort-Object LastWriteTime -Descending)
+        if ($found.Count -gt 0) { return $found[0].FullName }
+    }
+    return $null
 }
 
 function Invoke-Native {
-    param(
-        [string] $Command,
-        [string[]] $Arguments
-    )
+    param([string] $Command, [string[]] $Arguments)
+    $display = "$Command $($Arguments -join ' ')"
     & $Command @Arguments
     if ($LASTEXITCODE -ne 0) {
-        throw "command failed with exit $LASTEXITCODE`: $Command $($Arguments -join ' ')"
-    }
-}
-
-function Require-Command {
-    param([string] $Name)
-    if (-not (Get-Command -Name $Name -ErrorAction SilentlyContinue)) {
-        throw "`$Name` was not found on PATH. Install it and re-run."
+        Fail "command failed with exit $LASTEXITCODE`: $display"
     }
 }
 
 # ---------------------------------------------------------------------------
-# preflight
+# Preflight
 # ---------------------------------------------------------------------------
 
+Write-Step "converting $Model to $Quant"
 Write-Step 'checking prerequisites'
 
-$whisperCppRoot = (Resolve-Path -LiteralPath $WhisperCppPath -ErrorAction SilentlyContinue).Path
-if (-not $whisperCppRoot) {
-    throw "whisper.cpp path does not exist: $WhisperCppPath"
+Require-Command -Name 'python' -Hint " Install Python 3.10+ from https://python.org and re-run."
+
+if (-not $WhisperCppDir) {
+    if ($env:SVARAFLOW_WHISPERCPP -and (Test-Path -LiteralPath $env:SVARAFLOW_WHISPERCPP)) {
+        $WhisperCppDir = $env:SVARAFLOW_WHISPERCPP
+        Write-Ok "whisper.cpp from SVARAFLOW_WHISPERCPP: $WhisperCppDir"
+    } else {
+        Write-Host ''
+        Write-Host 'Enter the path to a built whisper.cpp checkout:' -ForegroundColor Yellow
+        $WhisperCppDir = Read-Host -Prompt 'whisper.cpp path'
+    }
 }
+
+$WhisperCppDir = $WhisperCppDir.TrimEnd('\', '/')
+
+if (-not (Test-Path -LiteralPath $WhisperCppDir)) {
+    Fail "whisper.cpp directory does not exist: $WhisperCppDir"
+}
+$whisperCppRoot = (Resolve-Path -LiteralPath $WhisperCppDir).Path
+
 $converter = Join-Path $whisperCppRoot 'models\convert-h5-to-ggml.py'
 if (-not (Test-Path -LiteralPath $converter)) {
-    throw "converter not found at $converter; is this a whisper.cpp checkout?"
+    Fail "converter not found at $converter; is this a whisper.cpp checkout?"
 }
 
-$quantizeExe = Join-Path $whisperCppRoot 'build\bin\quantize.exe'
-if (-not (Test-Path -LiteralPath $quantizeExe)) {
-    $quantizeExe = Join-Path $whisperCppRoot 'build\bin\quantize'
+if (-not $OutDir) {
+    if (-not $env:LOCALAPPDATA) {
+        Fail 'LOCALAPPDATA is not set and -OutDir was not provided.'
+    }
+    $OutDir = Join-Path (Join-Path $env:LOCALAPPDATA 'SvaraFlow') 'models'
 }
-if (-not (Test-Path -LiteralPath $quantizeExe)) {
-    throw "quantize binary not found under $whisperCppRoot\build\bin; build whisper.cpp first (cmake --build build --config Release)"
+if (-not (Test-Path -LiteralPath $OutDir)) {
+    New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
+}
+$OutDir = (Resolve-Path -LiteralPath $OutDir).Path
+
+if (-not $OpenAIWhisperDir) {
+    $parent = Split-Path -Parent $whisperCppRoot
+    $OpenAIWhisperDir = Join-Path $parent 'whisper'
 }
 
-Require-Command -Name 'python'
-Write-Ok "whisper.cpp at $whisperCppRoot"
-Write-Ok "converter at $converter"
-Write-Ok "quantize at $quantizeExe"
+$freeBytes = Get-FreeBytes -Path $OutDir
+$requiredBytes = 8GB
+if ($freeBytes -lt $requiredBytes) {
+    $freeGB = [math]::Round($freeBytes / 1GB, 2)
+    Fail "not enough free space on the drive holding ${OutDir}: $freeGB GB free, need about 8 GB."
+}
+$freeGB = [math]::Round($freeBytes / 1GB, 2)
+Write-Ok "free space: $freeGB GB on the output drive"
+
+Write-Ok "model:        $Model ($($modelInfo.RepoId))"
+Write-Ok "checkpoint:   $($modelInfo.RepoCommit)"
+Write-Ok "whisper.cpp:  $whisperCppRoot"
+Write-Ok "converter:    $converter"
+Write-Ok "out dir:      $OutDir"
+Write-Ok "openai/whisper: $OpenAIWhisperDir"
 
 # ---------------------------------------------------------------------------
-# 1. obtain the HF checkpoint
+# 1. Python venv
 # ---------------------------------------------------------------------------
 
-$WorkDir = (New-Item -ItemType Directory -Path $WorkDir -Force).FullName
+Write-Step 'preparing Python venv'
 
-if ($PSCmdlet.ParameterSetName -eq 'Repo') {
-    Write-Step "downloading $RepoId with huggingface-cli"
+$toolsDir = Split-Path -Parent $PSCommandPath
+$venvDir = Join-Path $toolsDir '.venv'
+$venvPython = Join-Path (Join-Path $venvDir 'Scripts') 'python.exe'
 
-    $haveCli = $null -ne (Get-Command 'huggingface-cli' -ErrorAction SilentlyContinue)
-    if (-not $haveCli) {
-        throw @"
-`huggingface-cli` is not on PATH. Install it with:
-
-    python -m pip install --user huggingface_hub[cli]
-
-or download the repository by hand and pass -ModelDir instead.
-"@
-    }
-
-    $localRepo = Join-Path $WorkDir ($RepoId -replace '[\\/:]', '_')
-    if (Test-Path -LiteralPath $localRepo) {
-        Write-Warn "re-using existing download at $localRepo"
-    } else {
-        Invoke-Native -Command 'huggingface-cli' -Arguments @(
-            'download', $RepoId,
-            '--local-dir', $localRepo,
-            '--local-dir-use-symlinks', 'False'
-        )
-    }
-    $sourceDir = $localRepo
+if (-not (Test-Path -LiteralPath $venvPython)) {
+    Write-Warn "creating venv at $venvDir"
+    Invoke-Native -Command $Python -Arguments @('-m', 'venv', $venvDir)
 } else {
-    $sourceDir = (Resolve-Path -LiteralPath $ModelDir).Path
-    Write-Step "using local checkpoint at $sourceDir"
+    Write-Ok "re-using venv at $venvDir"
 }
 
-if (-not (Test-Path -LiteralPath (Join-Path $sourceDir 'config.json'))) {
-    throw "no config.json under $sourceDir; this does not look like a Hugging Face Whisper checkpoint"
+& $venvPython --version
+if ($LASTEXITCODE -ne 0) { Fail "venv Python failed: $venvPython" }
+
+$packages = @(
+    @{ Import = 'torch';           Pip = 'torch';           Extra = @('--index-url', 'https://download.pytorch.org/whl/cpu') },
+    @{ Import = 'transformers';    Pip = 'transformers';    Extra = @() },
+    @{ Import = 'numpy';           Pip = 'numpy';           Extra = @() },
+    @{ Import = 'huggingface_hub'; Pip = 'huggingface_hub'; Extra = @() },
+    @{ Import = 'safetensors';     Pip = 'safetensors';     Extra = @() }
+)
+
+foreach ($pkg in $packages) {
+    & $venvPython -c "import $($pkg.Import)" 2>$null
+    if ($LASTEXITCODE -eq 0) { Write-Ok "$($pkg.Import) present"; continue }
+    Write-Warn "installing $($pkg.Pip)"
+    $installArgs = @('-m', 'pip', 'install', '--quiet', '--upgrade')
+    $installArgs += $pkg.Extra
+    $installArgs += $pkg.Pip
+    Invoke-Native -Command $venvPython -Arguments $installArgs
+    Write-Ok "$($pkg.Import) installed"
 }
 
 # ---------------------------------------------------------------------------
-# 2. re-save every tensor as float32
+# 2. Download checkpoint
+# ---------------------------------------------------------------------------
+
+Write-Step 'downloading checkpoint from Hugging Face'
+
+$workDir = Join-Path $toolsDir '.cache\convert'
+if (-not (Test-Path -LiteralPath $workDir)) {
+    New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+}
+$workDir = (Resolve-Path -LiteralPath $workDir).Path
+
+$checkpointDir = Join-Path $workDir ($modelInfo.RepoId -replace '[\\/:]', '_')
+$downloadResultFile = Join-Path $workDir '_download_result.json'
+if (Test-Path -LiteralPath $downloadResultFile) { Remove-Item -LiteralPath $downloadResultFile -Force }
+
+$repoIdPy = ConvertTo-PythonString $modelInfo.RepoId
+$checkpointDirPy = ConvertTo-PythonString $checkpointDir
+$revisionPy = ConvertTo-PythonString $modelInfo.RepoCommit
+$resultFilePy = ConvertTo-PythonString $downloadResultFile
+
+$downloadSource = @"
+import glob, json, os, sys
+from huggingface_hub import snapshot_download
+
+repo_id = $repoIdPy
+revision = $revisionPy
+local_dir = $checkpointDirPy
+result_path = $resultFilePy
+
+try:
+    path = snapshot_download(repo_id=repo_id, revision=revision, local_dir=local_dir)
+except Exception as exc:
+    print(f"snapshot_download failed: {exc}", file=sys.stderr)
+    sys.exit(2)
+
+commit = ''
+for pattern in (
+    os.path.join(path, '.cache', 'huggingface', 'download', '**', '*.metadata'),
+    os.path.join(path, '.cache', 'huggingface', '**', '*.metadata'),
+):
+    for hit in glob.glob(pattern, recursive=True):
+        try:
+            with open(hit, 'r', encoding='utf-8') as fh:
+                meta = json.load(fh)
+        except Exception:
+            continue
+        value = meta.get('commit_hash')
+        if value:
+            commit = value
+            break
+    if commit:
+        break
+
+with open(result_path, 'w', encoding='utf-8') as fh:
+    json.dump({'path': path, 'commit': commit}, fh)
+
+print(f"checkpoint at {path}")
+print(f"commit hash: {commit or '(not resolved)'}")
+"@
+Set-Content -LiteralPath (Join-Path $workDir '_download.py') -Value $downloadSource -Encoding UTF8
+$downloadPy = Join-Path $workDir '_download.py'
+
+Invoke-Native -Command $venvPython -Arguments @($downloadPy)
+
+if (-not (Test-Path -LiteralPath $downloadResultFile)) { Fail "download did not produce $downloadResultFile" }
+$downloadResult = Get-Content -LiteralPath $downloadResultFile -Raw | ConvertFrom-Json
+$checkpointPath = $downloadResult.path
+$resolvedCommit = $downloadResult.commit
+if (-not $resolvedCommit) {
+    $resolvedCommit = $modelInfo.RepoCommit
+    Write-Warn "could not resolve commit hash from cache; using pinned hash"
+}
+Write-Ok "checkpoint at $checkpointPath"
+Write-Ok "commit hash: $resolvedCommit"
+
+# ---------------------------------------------------------------------------
+# 3. Normalise bfloat16 weights to float32 if present
 # ---------------------------------------------------------------------------
 #
-# whisper.cpp's converter calls `.numpy()` on torch tensors. A bfloat16
-# tensor has no NumPy equivalent, so the call raises. Rather than patch the
-# converter, load the checkpoint here, cast every tensor, and write a
-# scratch copy the converter can read without modification.
+# whisper.cpp's converter does `list_vars[src].squeeze().numpy()`. PyTorch's
+# `.numpy()` refuses bfloat16 because NumPy has no equivalent dtype.
+#
+# The rewrite must handle four things that affect what `from_pretrained`
+# actually loads:
+#
+#   1. The scratch directory must contain no `.safetensors` file. If it does,
+#      `from_pretrained` prefers safetensors over `pytorch_model.bin` and
+#      loads the original bfloat16 weights.
+#   2. `config.json` must declare float32 in every field that `transformers`
+#      might read. Older versions read `torch_dtype`; newer versions read
+#      `dtype`. Both are set.
+#   3. `config.json` must not carry `_name_or_path` pointing at the original
+#      Hugging Face repo. Left unchanged, `from_pretrained` may resolve the
+#      weights back to the hub and re-download the original bfloat16
+#      safetensors. It is set to the scratch directory.
+#   4. The scratch contents are printed so any stray file is visible.
 
-Write-Step 'normalising tensor dtype to float32'
+Write-Step 'preparing checkpoint for the converter'
 
-$floatDir = Join-Path $WorkDir "$OutputName-float32"
-if (Test-Path -LiteralPath $floatDir) {
-    Remove-Item -LiteralPath $floatDir -Recurse -Force
-}
-New-Item -ItemType Directory -Path $floatDir | Out-Null
+$normalisedDir = Join-Path $workDir "$($modelInfo.FilePrefix)-float32"
+$normaliseResultFile = Join-Path $workDir '_normalise_result.json'
+if (Test-Path -LiteralPath $normaliseResultFile) { Remove-Item -LiteralPath $normaliseResultFile -Force }
 
-# Copy the non-weight files (config.json, tokenizer, vocab) as-is.
-Get-ChildItem -LiteralPath $sourceDir -File |
-    Where-Object { $_.Name -notin @('pytorch_model.bin', 'model.safetensors', 'model.safetensors.index.json') } |
-    ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $floatDir }
+$checkpointPathPy = ConvertTo-PythonString $checkpointPath
+$normalisedDirPy = ConvertTo-PythonString $normalisedDir
+$normaliseResultPy = ConvertTo-PythonString $normaliseResultFile
 
-$patchPy = Join-Path $WorkDir '_svaraflow_float32.py'
-@'
-import json
-import os
-import sys
-
+$normaliseSource = @"
+import json, os, shutil, sys
 import torch
 
-src, dst = sys.argv[1], sys.argv[2]
+src = $checkpointPathPy
+dst = $normalisedDirPy
+result_path = $normaliseResultPy
 
 state = None
+weight_source = None
 
-safetensors_path = os.path.join(src, "model.safetensors")
-bin_path = os.path.join(src, "pytorch_model.bin")
+safetensors_path = os.path.join(src, 'model.safetensors')
+bin_path = os.path.join(src, 'pytorch_model.bin')
 
 if os.path.isfile(safetensors_path):
     try:
         from safetensors.torch import load_file as st_load
     except ImportError:
-        print("safetensors is required to read model.safetensors", file=sys.stderr)
-        sys.exit(2)
+        print('safetensors is required to read model.safetensors', file=sys.stderr)
+        sys.exit(3)
     state = st_load(safetensors_path)
-    print(f"loaded {len(state)} tensors from {safetensors_path}")
+    weight_source = safetensors_path
 elif os.path.isfile(bin_path):
-    state = torch.load(bin_path, map_location="cpu", weights_only=True)
-    print(f"loaded {len(state)} tensors from {bin_path}")
+    state = torch.load(bin_path, map_location='cpu', weights_only=True)
+    weight_source = bin_path
 else:
-    print(f"no model.safetensors or pytorch_model.bin under {src}", file=sys.stderr)
-    sys.exit(3)
+    print(f'no model.safetensors or pytorch_model.bin under {src}', file=sys.stderr)
+    sys.exit(4)
 
+dtypes = sorted({str(t.dtype) for t in state.values()})
+bf16_count = sum(1 for t in state.values() if t.dtype == torch.bfloat16)
+print(f'weight source: {weight_source}')
+print(f'dtypes: {", ".join(dtypes)}')
+print(f'bfloat16 tensors: {bf16_count}')
+
+if bf16_count == 0:
+    with open(result_path, 'w', encoding='utf-8') as fh:
+        json.dump({'dir': src, 'normalised': False, 'bf16_count': 0}, fh)
+    print('checkpoint is already float32; using it as-is')
+    sys.exit(0)
+
+if os.path.isdir(dst):
+    shutil.rmtree(dst)
+os.makedirs(dst, exist_ok=True)
+
+# Copy non-weight files. Anything named like a weights file is skipped, and
+# any stray .safetensors in the result is removed after the copy.
+weight_exact = {
+    'model.safetensors',
+    'pytorch_model.bin',
+    'model.safetensors.index.json',
+    'pytorch_model.bin.index.json',
+}
+for name in os.listdir(src):
+    if name in weight_exact:
+        continue
+    if name.endswith('.safetensors') or name.endswith('.bin'):
+        continue
+    full = os.path.join(src, name)
+    if os.path.isfile(full):
+        shutil.copy2(full, os.path.join(dst, name))
+
+# Belt and braces: drop any safetensors that slipped through.
+for name in os.listdir(dst):
+    if name.endswith('.safetensors'):
+        os.remove(os.path.join(dst, name))
+
+# Rewrite config.json.
+config_path = os.path.join(dst, 'config.json')
+if os.path.isfile(config_path):
+    with open(config_path, 'r', encoding='utf-8') as fh:
+        cfg = json.load(fh)
+    print(f'config.json keys before: {sorted(cfg.keys())}')
+    print(f"  dtype:        {cfg.get('dtype')!r}")
+    print(f"  torch_dtype:  {cfg.get('torch_dtype')!r}")
+    print(f"  _name_or_path: {cfg.get('_name_or_path')!r}")
+    cfg['dtype'] = 'float32'
+    cfg['torch_dtype'] = 'float32'
+    cfg['_name_or_path'] = dst
+    with open(config_path, 'w', encoding='utf-8') as fh:
+        json.dump(cfg, fh, indent=2)
+    print('config.json: dtype = float32, torch_dtype = float32, _name_or_path = scratch dir')
+
+# Cast bfloat16 to float32 and save as pytorch_model.bin.
 converted = 0
-for name, tensor in state.items():
+for name, tensor in list(state.items()):
     if tensor.dtype == torch.bfloat16:
         state[name] = tensor.to(torch.float32)
         converted += 1
 
-out = os.path.join(dst, "pytorch_model.bin")
-torch.save(state, out)
-print(f"wrote {out} ({converted} tensors cast from bfloat16 to float32)")
-'@ | Set-Content -LiteralPath $patchPy -Encoding UTF8
+out_path = os.path.join(dst, 'pytorch_model.bin')
+torch.save(state, out_path)
+print(f'wrote {out_path} ({converted} tensors cast)')
 
-Invoke-Native -Command 'python' -Arguments @($patchPy, $sourceDir, $floatDir)
+# Print the scratch contents so a stray safetensors is visible.
+files = sorted(os.listdir(dst))
+print(f'scratch contents ({len(files)}): {files}')
+
+with open(result_path, 'w', encoding='utf-8') as fh:
+    json.dump({'dir': dst, 'normalised': True, 'bf16_count': converted}, fh)
+"@
+Set-Content -LiteralPath (Join-Path $workDir '_normalise.py') -Value $normaliseSource -Encoding UTF8
+$normalisePy = Join-Path $workDir '_normalise.py'
+
+Invoke-Native -Command $venvPython -Arguments @($normalisePy)
+
+if (-not (Test-Path -LiteralPath $normaliseResultFile)) { Fail "normalisation did not produce $normaliseResultFile" }
+$normaliseResult = Get-Content -LiteralPath $normaliseResultFile -Raw | ConvertFrom-Json
+$convertInputDir = $normaliseResult.dir
+if ($normaliseResult.normalised) {
+    Write-Ok "bfloat16 detected; wrote float32 copy to $convertInputDir"
+} else {
+    Write-Ok "checkpoint is already float32; using it as-is"
+}
 
 # ---------------------------------------------------------------------------
-# 3. run whisper.cpp's converter
+# 4. openai/whisper assets
 # ---------------------------------------------------------------------------
 
-Write-Step 'converting to GGML'
+Write-Step 'preparing openai/whisper assets'
 
-$convertedName = "$OutputName-f16.bin"
-$convertedPath = Join-Path $WorkDir $convertedName
+$openaiWhisperRoot = $null
+if (Test-Path -LiteralPath $OpenAIWhisperDir) {
+    $openaiWhisperRoot = (Resolve-Path -LiteralPath $OpenAIWhisperDir).Path
+    $assets = Join-Path $openaiWhisperRoot 'whisper\assets\mel_filters.npz'
+    if (-not (Test-Path -LiteralPath $assets)) {
+        Fail "found $OpenAIWhisperDir but $assets is missing; delete the directory and re-run."
+    }
+    Write-Ok "using existing openai/whisper at $openaiWhisperRoot"
+} else {
+    Require-Command -Name 'git' -Hint " Install git from https://git-scm.com/downloads and re-run."
+    Write-Warn "cloning https://github.com/openai/whisper into $OpenAIWhisperDir"
+    Invoke-Native -Command 'git' -Arguments @('clone', '--depth', '1', 'https://github.com/openai/whisper.git', $OpenAIWhisperDir)
+    $openaiWhisperRoot = (Resolve-Path -LiteralPath $OpenAIWhisperDir).Path
+    Write-Ok "cloned to $openaiWhisperRoot"
+}
+
+# ---------------------------------------------------------------------------
+# 5. Run converter
+# ---------------------------------------------------------------------------
+
+Write-Step 'converting checkpoint to GGML'
+
+$converterOutDir = Join-Path $workDir "$($modelInfo.FilePrefix)-out"
+if (Test-Path -LiteralPath $converterOutDir) { Remove-Item -LiteralPath $converterOutDir -Recurse -Force }
+New-Item -ItemType Directory -Path $converterOutDir -Force | Out-Null
 
 Push-Location $whisperCppRoot
 try {
-    Invoke-Native -Command 'python' -Arguments @(
-        $converter, $floatDir, $OutputName
-    )
+    Invoke-Native -Command $venvPython -Arguments @($converter, $convertInputDir, $openaiWhisperRoot, $converterOutDir)
 } finally {
     Pop-Location
 }
 
-# convert-h5-to-ggml.py writes `ggml-<name>.bin` into the current directory
-# (whisper.cpp root) unless it was already named that way. Find whichever it
-# produced and move it into our work dir under a predictable name.
-$generated = Get-ChildItem -LiteralPath $whisperCppRoot -Filter "ggml-*.bin" -File |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First 1
-if (-not $generated) {
-    throw "converter did not produce a ggml-*.bin under $whisperCppRoot"
+$converterOutput = Join-Path $converterOutDir 'ggml-model.bin'
+if (-not (Test-Path -LiteralPath $converterOutput)) {
+    $fallback = @(Get-ChildItem -LiteralPath $converterOutDir -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if ($fallback.Count -eq 0) { Fail "converter did not produce a file under $converterOutDir" }
+    $converterOutput = $fallback[0].FullName
+    Write-Warn "converter wrote $($fallback[0].Name); expected ggml-model.bin"
 }
-Move-Item -LiteralPath $generated.FullName -Destination $convertedPath -Force
-Write-Ok "wrote $convertedPath"
+
+$f16Name = "$($modelInfo.FilePrefix)-$($modelInfo.QuantForF16).bin"
+$f16Path = Join-Path $workDir $f16Name
+Move-Item -LiteralPath $converterOutput -Destination $f16Path -Force
+Write-Ok "wrote $f16Path"
 
 # ---------------------------------------------------------------------------
-# 4. quantize if requested
+# 6. Quantize
 # ---------------------------------------------------------------------------
 
-if ($Quantize -eq 'f16' -or $Quantize -eq 'f32') {
-    $finalPath = $convertedPath
-    Write-Warn "no quantization requested; the f16 file is the output"
+$finalPath = $f16Path
+if ($Quant -ne 'none') {
+    Write-Step 'locating or building the quantize binary'
+
+    $quantizeNames = @('whisper-quantize', 'quantize')
+    $quantizeExe = Find-WhisperBinary -Root $whisperCppRoot -Names $quantizeNames
+    if (-not $quantizeExe) {
+        Require-Command -Name 'cmake' -Hint " Install CMake from https://cmake.org/download/ and re-run."
+        Write-Warn 'quantize binary not found; building with CMake'
+        $buildDir = Join-Path $whisperCppRoot 'build'
+        Invoke-Native -Command 'cmake' -Arguments @('-B', $buildDir, '-DCMAKE_BUILD_TYPE=Release')
+        Invoke-Native -Command 'cmake' -Arguments @('--build', $buildDir, '--config', 'Release', '-j')
+        $quantizeExe = Find-WhisperBinary -Root $whisperCppRoot -Names $quantizeNames
+        if (-not $quantizeExe) { Fail "built whisper.cpp but no quantize binary was produced under $buildDir" }
+    }
+    Write-Ok "quantize binary: $quantizeExe"
+
+    Write-Step "quantizing to $Quant"
+    $finalName = "$($modelInfo.FilePrefix)-$Quant.bin"
+    $finalPath = Join-Path $OutDir $finalName
+    Invoke-Native -Command $quantizeExe -Arguments @($f16Path, $finalPath, $Quant)
+    Write-Ok "wrote $finalPath"
 } else {
-    Write-Step "quantizing to $Quantize"
-    $finalName = "$OutputName-$Quantize.bin"
-    $finalPath = Join-Path $WorkDir $finalName
-    Invoke-Native -Command $quantizeExe -Arguments @(
-        $convertedPath, $finalPath, $Quantize
-    )
+    $finalName = "$($modelInfo.FilePrefix)-f16.bin"
+    $finalPath = Join-Path $OutDir $finalName
+    Move-Item -LiteralPath $f16Path -Destination $finalPath -Force
     Write-Ok "wrote $finalPath"
 }
 
 # ---------------------------------------------------------------------------
-# 5. hash and report
+# 7. Sanity test
+# ---------------------------------------------------------------------------
+
+if (-not $SkipSanityTest) {
+    Write-Step 'running sanity transcription'
+    $whisperCli = Find-WhisperBinary -Root $whisperCppRoot -Names @('whisper-cli', 'main')
+    if (-not $whisperCli) {
+        Write-Warn 'whisper-cli not built; skipping sanity test'
+    } else {
+        $benchmark = Join-Path (Split-Path -Parent $toolsDir) 'tests\audio\benchmark20s.wav'
+        if (-not (Test-Path -LiteralPath $benchmark)) {
+            Write-Warn "benchmark file not found at $benchmark; skipping sanity test"
+        } else {
+            Write-Ok "whisper-cli: $whisperCli"
+            $transcription = & $whisperCli -m $finalPath -f $benchmark -l hi 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warn "sanity transcription exited $LASTEXITCODE"
+            } else {
+                $firstLines = ($transcription | Where-Object { $_ -match '\S' } | Select-Object -First 8) -join ' '
+                $snippet = if ($firstLines.Length -gt 200) { $firstLines.Substring(0, 200) } else { $firstLines }
+                Write-Host ''
+                Write-Host 'Sanity transcription (first 200 chars):' -ForegroundColor Cyan
+                Write-Host "  $snippet"
+                Write-Host ''
+                $nonAscii = ($snippet.ToCharArray() | Where-Object { [int]$_ -gt 127 }).Count
+                if ($nonAscii -eq 0) {
+                    Write-Ok 'output is Roman script (no non-ASCII characters detected)'
+                } else {
+                    Write-Warn "$nonAscii non-ASCII characters; verify the model produced Roman Hinglish"
+                }
+            }
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# 8. Report
 # ---------------------------------------------------------------------------
 
 Write-Step 'computing SHA-256'
 
 $hash = (Get-FileHash -LiteralPath $finalPath -Algorithm SHA256).Hash.ToLowerInvariant()
 $size = (Get-Item -LiteralPath $finalPath).Length
+$fileName = Split-Path -Leaf $finalPath
 
 Write-Host ''
-Write-Host 'Paste these into models.json:' -ForegroundColor Cyan
+Write-Host 'Paste into models.json:' -ForegroundColor Cyan
 Write-Host ''
-Write-Host ("  filename:    {0}" -f (Split-Path -Leaf $finalPath))
-Write-Host ("  size_bytes:  {0}" -f $size)
-Write-Host ("  sha256:      {0}" -f $hash)
+Write-Host '  {'
+Write-Host "    `"name`": `"Whisper-Hindi2Hinglish-$Model`","
+Write-Host "    `"tier`": `"$(if ($Model -eq 'Swift') { 'light' } else { 'standard' })`","
+Write-Host "    `"description`": `"$($modelInfo.Description)`","
+Write-Host "    `"filename`": `"$fileName`","
+Write-Host "    `"url`": `"TODO`","
+Write-Host "    `"revision`": `"$resolvedCommit`","
+Write-Host "    `"size_bytes`": $size,"
+Write-Host "    `"sha256`": `"$hash`","
+Write-Host "    `"license`": `"$($modelInfo.License)`","
+Write-Host "    `"quantization`": `"$(if ($Quant -eq 'none') { 'f16' } else { $Quant })`","
+Write-Host "    `"source_repo`": `"$($modelInfo.RepoId)`""
+Write-Host '  }'
 Write-Host ''
-Write-Host 'Then place the file at:' -ForegroundColor Cyan
-Write-Host ("  %LOCALAPPDATA%\SvaraFlow\models\{0}" -f (Split-Path -Leaf $finalPath))
+Write-Host 'File details:' -ForegroundColor Cyan
+Write-Host "  path:         $finalPath"
+Write-Host "  size:         $size bytes ($([math]::Round($size / 1MB, 1)) MB)"
+Write-Host "  sha256:       $hash"
+Write-Host "  hf revision:  $resolvedCommit"
 Write-Host ''
 Write-Host 'Done.' -ForegroundColor Green

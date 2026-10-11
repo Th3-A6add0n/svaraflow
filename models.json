@@ -1,17 +1,16 @@
-// models.json
 {
   "version": 1,
-  "_comment": "Model manifest for SvaraFlow's speech-to-text tiers. The 'url' and 'sha256' fields below are marked TODO. Fill them in with the exact download URL and the lowercase hex SHA-256 of the file the URL serves. The downloader treats a value of 'TODO' as 'skip verification', which lets you exercise the pipeline before the hashes are known. Do not commit model files; they belong in %LOCALAPPDATA%/SvaraFlow/models and are gitignored.",
+  "_comment": "Model manifest for SvaraFlow's speech-to-text tiers. The 'url' fields are marked TODO: fill them in once these models are hosted somewhere public. The downloader treats a value of 'TODO' as 'skip download and use the file already at %LOCALAPPDATA%/SvaraFlow/models/<filename>'. Do not commit model files; they are gitignored.",
   "models": [
     {
       "name": "Whisper-Hindi2Hinglish-Swift",
       "tier": "light",
       "description": "Whisper-base-sized Hindi-to-Hinglish model. Fast, lower accuracy. Writes Roman Hinglish directly.",
-      "filename": "ggml-hindi2hinglish-swift.bin",
+      "filename": "ggml-hinglish-swift-f16.bin",
       "url": "TODO",
-      "revision": "main",
-      "size_bytes": 0,
-      "sha256": "TODO",
+      "revision": "28c045e53a283e9ae3332de21050bf8155e8ff2b",
+      "size_bytes": 147951465,
+      "sha256": "4e9caa5f4b0416824d7cbeec22a37ef78a05e4b0189864eed65cd56d81c6b0a8",
       "license": "Apache-2.0",
       "quantization": "f16",
       "source_repo": "Oriserve/Whisper-Hindi2Hinglish-Swift"
@@ -20,11 +19,11 @@
       "name": "Whisper-Hindi2Hinglish-Apex",
       "tier": "standard",
       "description": "Large-v3-turbo-based Hindi-to-Hinglish model. Slower, higher accuracy. Writes Roman Hinglish directly.",
-      "filename": "ggml-hindi2hinglish-apex-q5_0.bin",
+      "filename": "ggml-hinglish-apex-q5_0.bin",
       "url": "TODO",
-      "revision": "main",
-      "size_bytes": 547000000,
-      "sha256": "TODO",
+      "revision": "f3214eed20b4e4d4144e739982d911f87b9cb223",
+      "size_bytes": 574041195,
+      "sha256": "9d877151b15cec1feb9110cfbc0a3162cf377bcc0ab1935174226f461cf60f13",
       "license": "Apache-2.0",
       "quantization": "q5_0",
       "source_repo": "Oriserve/Whisper-Hindi2Hinglish-Apex"

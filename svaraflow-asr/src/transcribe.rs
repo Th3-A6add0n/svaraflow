@@ -4,46 +4,59 @@
 //!
 //! 1. Runs Silero VAD over the 16 kHz mono signal to find speech regions.
 //! 2. Merges regions into chunks of at most [`DEFAULT_MAX_CHUNK_S`] with
-//!    [`DEFAULT_OVERLAP_S`] of overlap on each side, so no word is lost at
-//!    a chunk boundary.
-//! 3. Runs whisper.cpp on each chunk with token-level DTW timestamps.
+//!    [`DEFAULT_OVERLAP_S`] of overlap on each side.
+//! 3. Runs whisper.cpp on each chunk with token-level timestamps.
 //! 4. Merges sub-word tokens into whole words, drops duplicate words that
 //!    fall in the overlap, enforces increasing non-overlapping times, and
 //!    snaps each boundary to a local energy minimum within
 //!    [`SNAP_RADIUS_S`].
 //! 5. Applies a repetition guard: consecutive repeated n-grams are dropped.
 //!
-//! # DTW fallback
+//! # Whisper state
 //!
-//! Token-level DTW timestamps depend on the model carrying alignment heads
-//! for the configured preset. Fine-tuned models sometimes do. When
-//! whisper.cpp returns `t_dtw == -1` for every token in a segment, the
-//! engine falls back to proportional timing for that segment and flags
-//! every word from it as `estimated = true`. The caller sees the flag and
-//! can choose to warn the user.
+//! One `WhisperState` is created per `transcribe` call and reused across
+//! all chunks. `whisper.cpp` resets its internal state between `full`
+//! calls, so reusing the object is safe and avoids a `cudaMalloc` /
+//! `malloc` storm for every 30-second chunk.
+//!
+//! # Timestamp quality
+//!
+//! Word timing falls into two modes:
+//!
+//! - **DTW.** whisper.cpp can compute per-token timestamps via dynamic
+//!   time warping against a preset of "alignment heads". That preset must
+//!   match the loaded model. `whisper-rs` 0.16 does not expose
+//!   `WhisperContextParameters::with_dtw_aheads_preset` (nor a
+//!   `FullParams` equivalent), so the engine cannot declare a preset.
+//!   Without one, whisper.cpp's DTW pass produces nothing usable and, on
+//!   some builds, does not terminate quickly.
+//! - **Proportional.** The engine divides each segment's span evenly
+//!   across its tokens. Coarse, but it always terminates and every word is
+//!   flagged `estimated = true`.
+//!
+//! Because DTW is currently unusable, [`TranscribeConfig::use_dtw`] is
+//! accepted for compatibility but ignored: the engine requests token
+//! timestamps only when a future change wires the alignment-heads preset.
+//! See [`Engine::transcribe_chunk`].
 //!
 //! # Cancellation
 //!
-//! Cancellation is checked between chunks, not within a chunk. Worst-case
-//! cancel latency is one chunk's transcription time (typically under a
-//! second on GPU, a few seconds on CPU). This is deliberate:
-//! `set_abort_callback_safe` in `whisper-rs` 0.16 is documented as unsound.
+//! Cancellation is checked between chunks, not within a chunk.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
 };
 
 use svaraflow_core::audio::MonoAudio;
-use svaraflow_core::vad::Vad;
 
 use crate::error::AsrError;
 use crate::models::{ModelEntry, Tier};
 
-/// Sample rate the engine expects. Matches `whisper.cpp` and Silero.
+/// Sample rate the engine expects.
 pub const SAMPLE_RATE: u32 = 16_000;
 
 /// Longest chunk fed to one `whisper.cpp` call.
@@ -102,10 +115,15 @@ pub struct TranscribeConfig {
     pub language: LanguageHint,
     /// Decoding strategy.
     pub decode: DecodeStrategy,
-    /// Request token-level DTW timestamps. Default `true`.
+    /// Request token-level DTW timestamps.
+    ///
+    /// Currently ignored. See the module docs: the DTW alignment-heads
+    /// preset is not exposed by `whisper-rs` 0.16, so requesting token
+    /// timestamps costs decoder time and produces no usable output. The
+    /// flag is retained so callers can set it today and get DTW as soon
+    /// as the preset is wired.
     pub use_dtw: bool,
-    /// Optional initial prompt. Built from `vocabulary` when that is
-    /// non-empty and this is `None`.
+    /// Optional initial prompt.
     pub initial_prompt: Option<String>,
     /// Domain vocabulary to bias the decoder with.
     pub vocabulary: Vec<String>,
@@ -128,7 +146,7 @@ impl Default for TranscribeConfig {
             tier: Tier::Standard,
             language: LanguageHint::Hindi,
             decode: DecodeStrategy::Greedy,
-            use_dtw: true,
+            use_dtw: false,
             initial_prompt: None,
             vocabulary: Vec::new(),
             temperature_fallback: true,
@@ -150,8 +168,6 @@ impl TranscribeConfig {
         if self.vocabulary.is_empty() {
             return None;
         }
-        // A short comma-separated list biases the decoder toward these
-        // words. Keep it short; a long prompt eats the context window.
         let joined = self.vocabulary.join(", ");
         Some(format!("Vocabulary: {joined}."))
     }
@@ -213,9 +229,6 @@ impl Transcript {
 }
 
 /// Progress callback signature for transcription.
-///
-/// `chunk_index` is 1-based, `chunks` is the total. `fraction` is
-/// `chunk_index / chunks`.
 pub type TranscribeProgressFn<'a> = dyn FnMut(usize, usize) + 'a;
 
 /// The engine. Loaded once, reused across calls.
@@ -223,17 +236,12 @@ pub struct Engine {
     ctx: WhisperContext,
     config: TranscribeConfig,
     model_name: String,
-    /// The Silero VAD, when the `vad` feature is on.
     #[cfg(feature = "vad")]
     vad: Option<crate::vad::SileroVad>,
 }
 
 impl Engine {
     /// Loads a model and (optionally) a VAD.
-    ///
-    /// `vad_path` is the Silero VAD ONNX model. It is required only when
-    /// the `vad` feature is on; when the feature is off, the parameter is
-    /// ignored and the engine transcribes the whole signal as one chunk.
     ///
     /// # Errors
     ///
@@ -253,34 +261,29 @@ impl Engine {
             });
         }
 
+        // Do not set `use_gpu` explicitly. `WhisperContextParameters::default()`
+        // already defaults it to `cfg!(feature = "_gpu")` inside the
+        // `whisper-rs` crate, which is `true` whenever a GPU backend
+        // feature is enabled on `whisper-rs`.
+        //
+        // Flash attention must be off for token timestamps to be
+        // produced at all, and it interacts badly with the DTW pass on
+        // some builds.
         let mut ctx_params = WhisperContextParameters::default();
-        // Enable GPU when the `cuda` feature is on. whisper.cpp will fall
-        // back to CPU if no CUDA device is available, so this is safe.
-        ctx_params = ctx_params.with_use_gpu(cfg!(feature = "cuda"));
-        // DTW needs flash attention off.
-        ctx_params = ctx_params.with_flash_attn(false);
-        if config.use_dtw {
-            ctx_params = ctx_params
-                .with_dtw_token_timestamps(true)
-                // **Unverified.** The exact variant name of the alignment
-                // heads preset for large-v3-turbo is not confirmed. If the
-                // compiler rejects this, the fix is a one-line change to
-                // the value; the rest of the DTW plumbing is unaffected.
-                .with_dtw_aheads_preset(whisper_rs::DtwModelPreset::LargeV3Turbo);
-        }
+        ctx_params.flash_attn(false);
 
-        let ctx = WhisperContext::new_with_params(
-            model_path
-                .to_str()
-                .ok_or_else(|| AsrError::WhisperContext {
-                    path: model_path.display().to_string(),
-                    reason: "path is not valid UTF-8".into(),
-                })?,
-            ctx_params,
-        )
-        .map_err(|e| AsrError::WhisperContext {
-            path: model_path.display().to_string(),
-            reason: e.to_string(),
+        let model_str = model_path
+            .to_str()
+            .ok_or_else(|| AsrError::WhisperContext {
+                path: model_path.display().to_string(),
+                reason: "path is not valid UTF-8".into(),
+            })?;
+
+        let ctx = WhisperContext::new_with_params(model_str, ctx_params).map_err(|e| {
+            AsrError::WhisperContext {
+                path: model_path.display().to_string(),
+                reason: e.to_string(),
+            }
         })?;
 
         #[cfg(feature = "vad")]
@@ -316,8 +319,8 @@ impl Engine {
     ///
     /// - [`AsrError::Cancelled`] when `cancel` becomes `true` between
     ///   chunks.
-    /// - [`AsrError::WhisperState`] and [`AsrError::WhisperStateCreate`] on
-    ///   whisper.cpp failures.
+    /// - [`AsrError::WhisperState`] and [`AsrError::WhisperStateCreate`]
+    ///   on whisper.cpp failures.
     pub fn transcribe(
         &mut self,
         audio: &MonoAudio,
@@ -341,6 +344,14 @@ impl Engine {
         let mut all_segments: Vec<Segment> = Vec::new();
         let mut detected_language = String::new();
 
+        // Create the state once. `whisper.cpp` resets internal state
+        // between `full` calls, so the same object serves every chunk and
+        // avoids re-allocating ~400 MB of buffers per chunk.
+        let mut state: WhisperState = self
+            .ctx
+            .create_state()
+            .map_err(|e| AsrError::WhisperStateCreate(e.to_string()))?;
+
         for (i, chunk) in chunks.iter().enumerate() {
             if cancel.load(Ordering::Relaxed) {
                 return Err(AsrError::Cancelled);
@@ -348,10 +359,8 @@ impl Engine {
             progress(i + 1, total);
 
             let slice = &audio.samples[chunk.start_sample..chunk.end_sample];
-            let segments = self.transcribe_chunk(slice, chunk.start_s)?;
+            let segments = self.transcribe_chunk(&mut state, slice, chunk.start_s)?;
             if detected_language.is_empty() {
-                // whisper.cpp reports the detected language per state, but
-                // we do not have a clean accessor here. Use the hint.
                 detected_language = match self.config.language {
                     LanguageHint::Hindi => "hi".to_string(),
                     LanguageHint::Auto => "auto".to_string(),
@@ -360,22 +369,17 @@ impl Engine {
             all_segments.extend(segments);
         }
 
-        // Drop words that fall inside the overlap of two chunks.
         dedup_overlaps(&mut all_segments, self.config.overlap_s);
-        // Enforce increasing non-overlapping times.
         enforce_monotonic(&mut all_segments);
-        // Snap boundaries to local energy minima.
         for segment in &mut all_segments {
             for word in &mut segment.words {
                 snap_word(word, &audio.samples, SAMPLE_RATE);
             }
         }
-        // Repetition guard.
         if self.config.repetition_guard {
             drop_repeated_ngrams(&mut all_segments);
         }
 
-        // Recompute segment spans from the surviving words.
         for segment in &mut all_segments {
             if let (Some(first), Some(last)) = (segment.words.first(), segment.words.last()) {
                 segment.start_s = first.start_s;
@@ -401,13 +405,13 @@ impl Engine {
         })
     }
 
-    /// Runs whisper.cpp over one chunk.
-    fn transcribe_chunk(&self, samples: &[f32], offset_s: f64) -> Result<Vec<Segment>, AsrError> {
-        let mut state: WhisperState = self
-            .ctx
-            .create_state()
-            .map_err(|e| AsrError::WhisperStateCreate(e.to_string()))?;
-
+    /// Runs whisper.cpp over one chunk using a caller-provided state.
+    fn transcribe_chunk(
+        &self,
+        state: &mut WhisperState,
+        samples: &[f32],
+        offset_s: f64,
+    ) -> Result<Vec<Segment>, AsrError> {
         let strategy = match self.config.decode {
             DecodeStrategy::Greedy => SamplingStrategy::Greedy { best_of: 1 },
             DecodeStrategy::BeamSearch { beam_size } => SamplingStrategy::BeamSearch {
@@ -422,8 +426,24 @@ impl Engine {
         params.set_print_progress(false);
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
-        params.set_token_timestamps(self.config.use_dtw);
         params.set_no_speech_thold(self.config.no_speech_threshold);
+
+        // Token timestamps enable whisper.cpp's DTW alignment pass. That
+        // pass needs an alignment-heads preset that matches the loaded
+        // model, and `whisper-rs` 0.16 does not expose the setter for it.
+        // Without the preset the pass consumes decoder time and produces
+        // nothing: every token comes back with `t_dtw == -1`, and every
+        // word gets `estimated = true` regardless. Requesting the pass
+        // is therefore worse than useless until the alignment-heads path
+        // is wired.
+        //
+        // `self.config.use_dtw` is retained as an API field so that when
+        // the preset is available this line becomes
+        // `params.set_token_timestamps(self.config.use_dtw);`. For now,
+        // off.
+        let _ = self.config.use_dtw;
+        params.set_token_timestamps(false);
+
         if self.config.temperature_fallback {
             params.set_temperature_inc(0.2);
         } else {
@@ -441,31 +461,29 @@ impl Engine {
 
         let mut out = Vec::new();
         for segment in state.as_iter() {
-            let text = segment.to_str_lossy().unwrap_or_default().to_string();
+            let text = match segment.to_str_lossy() {
+                Ok(s) => s.to_string(),
+                Err(_) => continue,
+            };
             if text.trim().is_empty() {
                 continue;
             }
-            let seg_start =
-                segment.start_timestamp() as f64 / 100.0 + offset_s; // centiseconds
+            let seg_start = segment.start_timestamp() as f64 / 100.0 + offset_s;
             let seg_end = segment.end_timestamp() as f64 / 100.0 + offset_s;
 
-            let n_tokens = segment.n_tokens() as i64;
-            let mut raw: Vec<RawToken> = Vec::with_capacity(n_tokens as usize);
+            let n_tokens = segment.n_tokens();
+            let mut raw: Vec<RawToken> = Vec::with_capacity(n_tokens.max(0) as usize);
             for ti in 0..n_tokens {
-                let Ok(token) = segment.get_token(ti) else {
+                let Some(token) = segment.get_token(ti) else {
+                    continue;
+                };
+                let Ok(token_text) = token.to_str() else {
                     continue;
                 };
                 let data = token.token_data();
-                let Ok(text) = token.to_str() else {
-                    continue;
-                };
-                let text = text.to_string();
                 raw.push(RawToken {
-                    text,
-                    // `t_dtw` is centiseconds. `-1` means unavailable.
+                    text: token_text.to_string(),
                     t_dtw_cs: data.t_dtw,
-                    t0_cs: data.t0,
-                    t1_cs: data.t1,
                     probability: data.p,
                 });
             }
@@ -483,9 +501,6 @@ impl Engine {
     }
 
     /// Splits the audio into chunks based on VAD.
-    ///
-    /// When VAD is unavailable (feature off, or no model configured), the
-    /// whole signal becomes one chunk.
     fn plan_chunks(&mut self, audio: &MonoAudio) -> Result<Vec<Chunk>, AsrError> {
         #[cfg(feature = "vad")]
         {
@@ -502,7 +517,6 @@ impl Engine {
         {
             let _ = audio;
         }
-        // Fallback: one chunk per `max_chunk_s`, no VAD.
         Ok(plan_chunks_fixed(
             audio,
             self.config.max_chunk_s,
@@ -528,10 +542,6 @@ struct RawToken {
     text: String,
     /// DTW timestamp in centiseconds, or `-1`.
     t_dtw_cs: i64,
-    /// Token start in centiseconds (VAD-independent).
-    t0_cs: i64,
-    /// Token end in centiseconds.
-    t1_cs: i64,
     /// Probability.
     probability: f32,
 }
@@ -548,12 +558,11 @@ fn merge_tokens_into_words(
     let total_tokens = tokens.len().max(1);
 
     for (i, tok) in tokens.iter().enumerate() {
-        // A token starts a new word if its decoded text begins with a space
-        // or with the BPE space marker U+0120 (`Ġ`). whisper.cpp's
-        // `to_str()` may return either depending on the build.
         let raw = tok.text.as_str();
-        let starts_word = raw.starts_with(' ') || raw.starts_with('\u{0120}') || words.is_empty() && current.is_none();
-        let piece = raw.trim_start_matches(|c: char| c == ' ' || c == '\u{0120}').to_string();
+        let starts_word = raw.starts_with(' ')
+            || raw.starts_with('\u{0120}')
+            || (words.is_empty() && current.is_none());
+        let piece = raw.trim_start_matches([' ', '\u{0120}']).to_string();
         if piece.is_empty() {
             continue;
         }
@@ -561,8 +570,6 @@ fn merge_tokens_into_words(
         let (start_s, end_s) = if dtw_usable {
             (tok.t_dtw_cs as f64 / 100.0, tok.t_dtw_cs as f64 / 100.0)
         } else {
-            // Proportional: distribute the segment's span evenly across
-            // tokens. Crude, but flagged as estimated.
             let frac_start = i as f64 / total_tokens as f64;
             let frac_end = (i + 1) as f64 / total_tokens as f64;
             (
@@ -600,9 +607,6 @@ fn merge_tokens_into_words(
         words.push(w);
     }
 
-    // For DTW, every token in a word shares the same `t_dtw` (whisper.cpp
-    // gives one timestamp per token, and words are runs of tokens). Stretch
-    // each word's end to the next word's start so intervals do not collapse.
     if dtw_usable {
         for i in 0..words.len() {
             if i + 1 < words.len() {
@@ -631,7 +635,6 @@ fn plan_chunks_with_vad(
         return Ok(plan_chunks_fixed(audio, max_chunk_s, overlap_s));
     }
 
-    // Find speech regions.
     let min_silence_windows = ((VAD_MIN_SILENCE_S / spw).round() as usize).max(1);
     let mut regions: Vec<(f64, f64)> = Vec::new();
     let mut run_start: Option<usize> = None;
@@ -659,7 +662,6 @@ fn plan_chunks_with_vad(
         return Ok(plan_chunks_fixed(audio, max_chunk_s, overlap_s));
     }
 
-    // Split regions longer than `max_chunk_s`.
     let mut split: Vec<(f64, f64)> = Vec::new();
     for (s, e) in regions {
         if e - s <= max_chunk_s {
@@ -674,13 +676,13 @@ fn plan_chunks_with_vad(
         }
     }
 
-    // Convert to samples with overlap.
     let samples_per_s = audio.sample_rate as f64;
+    let duration = audio.duration_seconds();
     let chunks: Vec<Chunk> = split
         .into_iter()
         .map(|(s, e)| Chunk {
             start_sample: (((s - overlap_s).max(0.0)) * samples_per_s) as usize,
-            end_sample: (((e + overlap_s).min(audio.duration_seconds())) * samples_per_s) as usize,
+            end_sample: (((e + overlap_s).min(duration)) * samples_per_s) as usize,
             start_s: (s - overlap_s).max(0.0),
         })
         .collect();
@@ -719,11 +721,7 @@ fn plan_chunks_fixed(audio: &MonoAudio, max_chunk_s: f64, overlap_s: f64) -> Vec
 }
 
 /// Removes words that appear in the overlap between two consecutive chunks.
-///
-/// The rule: when two segments' words both fall within `overlap_s` of the
-/// boundary, keep the earlier occurrence and drop the later one if the
-/// texts match.
-fn dedup_overlaps(segments: &mut [Segment], overlap_s: f64) {
+fn dedup_overlaps(segments: &mut Vec<Segment>, overlap_s: f64) {
     if segments.len() < 2 {
         return;
     }
@@ -732,14 +730,13 @@ fn dedup_overlaps(segments: &mut [Segment], overlap_s: f64) {
         let boundary = segments[i - 1].end_s;
         let mut to_remove: Vec<usize> = Vec::new();
         for (j, w) in segments[i].words.iter().enumerate() {
-            if w.start_s > boundary - overlap_s {
-                if segments[i - 1]
+            if w.start_s > boundary - overlap_s
+                && segments[i - 1]
                     .words
                     .iter()
                     .any(|prev| prev.text == w.text && (prev.start_s - w.start_s).abs() < 0.5)
-                {
-                    to_remove.push(j);
-                }
+            {
+                to_remove.push(j);
             }
         }
         for j in to_remove.into_iter().rev() {
@@ -791,7 +788,7 @@ fn snap_to_min_energy(t: f64, samples: &[f32], rate: u32, radius: usize) -> f64 
     }
     let mut best = center as usize;
     let mut best_energy = f32::INFINITY;
-    let win = 80usize; // 5 ms at 16 kHz
+    let win = 80usize;
     let mut i = lo;
     while i + win <= hi {
         let rms: f32 = samples[i..i + win].iter().map(|s| s * s).sum();
@@ -805,10 +802,6 @@ fn snap_to_min_energy(t: f64, samples: &[f32], rate: u32, radius: usize) -> f64 
 }
 
 /// Drops consecutive repeated n-grams.
-///
-/// For each n in 2..=5, if the same n-word sequence appears three or more
-/// times in a row, the second and later copies are removed. This catches
-/// the classic whisper hallucination loop.
 fn drop_repeated_ngrams(segments: &mut [Segment]) {
     for segment in segments.iter_mut() {
         for n in 2..=5usize {
@@ -817,13 +810,17 @@ fn drop_repeated_ngrams(segments: &mut [Segment]) {
             }
             let mut i = 0;
             while i + n * 3 <= segment.words.len() {
-                let first: Vec<&str> =
-                    segment.words[i..i + n].iter().map(|w| w.text.as_str()).collect();
+                let first: Vec<&str> = segment.words[i..i + n]
+                    .iter()
+                    .map(|w| w.text.as_str())
+                    .collect();
                 let mut repeat_count = 1;
                 let mut j = i + n;
                 while j + n <= segment.words.len() {
-                    let next: Vec<&str> =
-                        segment.words[j..j + n].iter().map(|w| w.text.as_str()).collect();
+                    let next: Vec<&str> = segment.words[j..j + n]
+                        .iter()
+                        .map(|w| w.text.as_str())
+                        .collect();
                     if next == first {
                         repeat_count += 1;
                         j += n;
@@ -832,7 +829,6 @@ fn drop_repeated_ngrams(segments: &mut [Segment]) {
                     }
                 }
                 if repeat_count >= 3 {
-                    // Keep one copy; remove the rest.
                     let remove_from = i + n;
                     let remove_to = j;
                     segment.words.drain(remove_from..remove_to);
@@ -862,7 +858,11 @@ mod tests {
         let start = words.first().map(|w| w.start_s).unwrap_or(0.0);
         let end = words.last().map(|w| w.end_s).unwrap_or(0.0);
         Segment {
-            text: words.iter().map(|w| w.text.as_str()).collect::<Vec<_>>().join(" "),
+            text: words
+                .iter()
+                .map(|w| w.text.as_str())
+                .collect::<Vec<_>>()
+                .join(" "),
             start_s: start,
             end_s: end,
             words,
@@ -870,18 +870,27 @@ mod tests {
     }
 
     #[test]
-    fn tier_round_trip_via_manifest() {
-        // Sanity: the config carries the tier through to the transcript.
+    fn default_config_uses_standard_tier() {
         let cfg = TranscribeConfig::default();
         assert_eq!(cfg.tier, Tier::Standard);
         assert_eq!(cfg.language, LanguageHint::Hindi);
-        assert!(cfg.use_dtw);
+    }
+
+    #[test]
+    fn default_config_has_dtw_off() {
+        // The DTW alignment pass is disabled until the alignment-heads
+        // preset is wired. Requesting it costs decoder time and produces
+        // no usable output.
+        let cfg = TranscribeConfig::default();
+        assert!(!cfg.use_dtw);
     }
 
     #[test]
     fn effective_prompt_from_vocabulary() {
-        let mut cfg = TranscribeConfig::default();
-        cfg.vocabulary = vec!["SvaraFlow".into(), "Th3 A6add0n".into()];
+        let cfg = TranscribeConfig {
+            vocabulary: vec!["SvaraFlow".into(), "Th3 A6add0n".into()],
+            ..TranscribeConfig::default()
+        };
         let p = cfg.effective_prompt().unwrap();
         assert!(p.contains("SvaraFlow"));
         assert!(p.contains("Th3 A6add0n"));
@@ -889,18 +898,32 @@ mod tests {
 
     #[test]
     fn effective_prompt_explicit_wins() {
-        let mut cfg = TranscribeConfig::default();
-        cfg.vocabulary = vec!["x".into()];
-        cfg.initial_prompt = Some("custom".into());
+        let cfg = TranscribeConfig {
+            vocabulary: vec!["x".into()],
+            initial_prompt: Some("custom".into()),
+            ..TranscribeConfig::default()
+        };
         assert_eq!(cfg.effective_prompt().unwrap(), "custom");
     }
 
     #[test]
     fn merge_tokens_uses_leading_space_heuristic() {
         let tokens = vec![
-            RawToken { text: " Hel".into(), t_dtw_cs: 0, t0_cs: 0, t1_cs: 10, probability: 0.9 },
-            RawToken { text: "lo".into(), t_dtw_cs: 0, t0_cs: 10, t1_cs: 20, probability: 0.85 },
-            RawToken { text: " world".into(), t_dtw_cs: 50, t0_cs: 20, t1_cs: 30, probability: 0.88 },
+            RawToken {
+                text: " Hel".into(),
+                t_dtw_cs: 0,
+                probability: 0.9,
+            },
+            RawToken {
+                text: "lo".into(),
+                t_dtw_cs: 0,
+                probability: 0.85,
+            },
+            RawToken {
+                text: " world".into(),
+                t_dtw_cs: 50,
+                probability: 0.88,
+            },
         ];
         let words = merge_tokens_into_words(&tokens, true, 0.0, 1.0);
         assert_eq!(words.len(), 2);
@@ -911,8 +934,16 @@ mod tests {
     #[test]
     fn merge_tokens_marks_proportional_as_estimated() {
         let tokens = vec![
-            RawToken { text: " a".into(), t_dtw_cs: -1, t0_cs: 0, t1_cs: 10, probability: 0.9 },
-            RawToken { text: " b".into(), t_dtw_cs: -1, t0_cs: 10, t1_cs: 20, probability: 0.9 },
+            RawToken {
+                text: " a".into(),
+                t_dtw_cs: -1,
+                probability: 0.9,
+            },
+            RawToken {
+                text: " b".into(),
+                t_dtw_cs: -1,
+                probability: 0.9,
+            },
         ];
         let words = merge_tokens_into_words(&tokens, false, 0.0, 1.0);
         assert!(words.iter().all(|w| w.estimated));
@@ -922,8 +953,8 @@ mod tests {
     fn monotonic_enforcement_fixes_overlaps() {
         let mut segs = vec![segment(vec![
             word("a", 0.0, 1.0),
-            word("b", 0.5, 1.5), // starts before "a" ends
-            word("c", 1.4, 1.4), // zero-length
+            word("b", 0.5, 1.5),
+            word("c", 1.4, 1.4),
         ])];
         enforce_monotonic(&mut segs);
         let w = &segs[0].words;
@@ -947,7 +978,6 @@ mod tests {
         ])];
         drop_repeated_ngrams(&mut segs);
         let texts: Vec<&str> = segs[0].words.iter().map(|w| w.text.as_str()).collect();
-        // One "hello there" survives; the rest of the repeats are gone.
         assert_eq!(texts, vec!["hello", "there", "goodbye"]);
     }
 
@@ -968,7 +998,6 @@ mod tests {
         let audio = MonoAudio::new(vec![0.0; SAMPLE_RATE as usize * 90], SAMPLE_RATE);
         let chunks = plan_chunks_fixed(&audio, 30.0, 0.3);
         assert!(chunks.len() >= 3, "got {} chunks", chunks.len());
-        // Every chunk starts before it ends.
         for c in &chunks {
             assert!(c.end_sample > c.start_sample);
         }
@@ -1005,7 +1034,6 @@ mod tests {
         let c = TranscribeConfig::default();
         assert_eq!(c.max_chunk_s, 30.0);
         assert_eq!(c.overlap_s, 0.3);
-        assert!(c.use_dtw);
         assert!(c.temperature_fallback);
         assert!(c.repetition_guard);
     }

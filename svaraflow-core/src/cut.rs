@@ -18,24 +18,19 @@
 //!
 //! Video tracks are always cut. Audio tracks are cut iff their `index`
 //! appears in the caller's selection; `None` means "all audio tracks", and
-//! `Some(&[])` means "no audio tracks". Unselected tracks are copied
-//! verbatim, so a caller who only wants to touch audio cannot accidentally
-//! shift the video.
+//! `Some(&[])` means "no audio tracks".
 //!
 //! # Preconditions
 //!
 //! `ranges.keep` and `ranges.silences` must be sorted, disjoint, and
-//! non-overlapping. [`crate::silence::detect_silence`] produces such ranges.
-//! A caller who violates this precondition will get an invalid timeline; the
-//! function does not panic.
+//! non-overlapping. [`crate::silence::detect_silence`] produces such
+//! ranges.
 //!
 //! # Source mapping
 //!
 //! For a portion `[a, b)` of a clip with `speed v`, the new clip's source
 //! range is `[source_in + round((a - clip.start) * v), source_in +
-//! round((b - clip.start) * v))`. At `v = 1.0` this is exact; at other
-//! speeds the two edges can be off by at most one frame, which is the same
-//! approximation [`crate::audio::apply_speed`] makes.
+//! round((b - clip.start) * v))`.
 
 use crate::silence::{FrameRange, SilenceRanges};
 use crate::timeline::{Clip, Timeline, Track, TrackKind};
@@ -43,17 +38,15 @@ use crate::timeline::{Clip, Timeline, Track, TrackKind};
 /// How keep/silence ranges are translated into a new timeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CutMode {
-    /// Keep ranges are placed back to back starting at frame 0. The new
-    /// timeline is shorter than the original.
+    /// Keep ranges are placed back to back starting at frame 0.
     Remove,
-    /// Every keep and silence range becomes its own clip, at its original
-    /// position. The timeline is not shortened.
+    /// Every keep and silence range becomes its own clip.
     Keep,
     /// As [`CutMode::Keep`], but silent-range clips on audio tracks get
-    /// `muted: true`. Video clips in silence ranges are unaffected.
+    /// `muted: true`.
     Mute,
     /// Keep ranges stay at their original positions; silence ranges are
-    /// left empty (no clips at all).
+    /// left empty.
     Gaps,
 }
 
@@ -62,17 +55,13 @@ pub enum CutMode {
 pub struct CutStats {
     /// Number of silence regions in the source ranges.
     pub cut_count: usize,
-    /// Total frames of silence encoded in the source ranges. In Remove
-    /// mode this equals the timeline shortening; in the other modes it is
-    /// informational.
+    /// Total frames of silence encoded in the source ranges.
     pub silence_frames: i64,
     /// Percentage shorter if the timeline were cut with Remove mode.
     pub percent_shorter: f64,
     /// Number of clips in the resulting timeline.
     pub clips_created: usize,
-    /// Number of original clips that produced no output. Zero in Keep and
-    /// Mute modes; nonzero in Remove and Gaps when a clip lay entirely
-    /// inside a silence region.
+    /// Number of original clips that produced no output.
     pub clips_removed: usize,
     /// `Timeline::duration_frames()` of the input timeline.
     pub frames_before: i64,
@@ -90,9 +79,6 @@ pub struct CutResult {
 }
 
 /// Applies `ranges` to `timeline` under `mode`.
-///
-/// Returns a new [`Timeline`] and a [`CutStats`]. See the module docs for
-/// the mode semantics and the source-mapping rule.
 #[must_use]
 pub fn apply_cuts(
     timeline: &Timeline,
@@ -145,7 +131,6 @@ pub fn apply_cuts(
     }
 }
 
-/// True when `track` should be cut.
 fn is_selected(track: &Track, audio_indices: Option<&[u32]>) -> bool {
     match track.kind {
         TrackKind::Video => true,
@@ -156,7 +141,6 @@ fn is_selected(track: &Track, audio_indices: Option<&[u32]>) -> bool {
     }
 }
 
-/// Cuts one track according to `mode`.
 fn cut_track(track: &Track, ranges: &SilenceRanges, mode: CutMode) -> (Vec<Clip>, usize) {
     let (clips, removed) = match mode {
         CutMode::Remove => cut_track_remove(track, &ranges.keep),
@@ -170,9 +154,7 @@ fn cut_track(track: &Track, ranges: &SilenceRanges, mode: CutMode) -> (Vec<Clip>
     (clips, removed)
 }
 
-/// Remove mode: keep ranges concatenated from frame 0.
 fn cut_track_remove(track: &Track, keep: &[FrameRange]) -> (Vec<Clip>, usize) {
-    // New position of each keep range's start in the shortened timeline.
     let mut new_positions = Vec::with_capacity(keep.len());
     let mut cursor = 0i64;
     for kr in keep {
@@ -206,9 +188,6 @@ fn cut_track_remove(track: &Track, keep: &[FrameRange]) -> (Vec<Clip>, usize) {
     (produced, removed)
 }
 
-/// Keep / Mute mode: every range (keep and silence) becomes its own clip at
-/// its original position. `mute_silences` controls whether silence-range
-/// clips are muted.
 fn cut_track_split(
     track: &Track,
     ranges: &SilenceRanges,
@@ -243,7 +222,6 @@ fn cut_track_split(
     (produced, removed)
 }
 
-/// Gaps mode: only keep ranges produce clips, at their original positions.
 fn cut_track_gaps(track: &Track, keep: &[FrameRange]) -> (Vec<Clip>, usize) {
     let mut produced: Vec<Clip> = Vec::new();
     let mut removed = 0usize;
@@ -270,7 +248,6 @@ fn cut_track_gaps(track: &Track, keep: &[FrameRange]) -> (Vec<Clip>, usize) {
     (produced, removed)
 }
 
-/// Interleaves keep and silence ranges by start frame.
 fn interleave(ranges: &SilenceRanges) -> Vec<(bool, FrameRange)> {
     let mut all: Vec<(bool, FrameRange)> = ranges
         .keep
@@ -282,11 +259,6 @@ fn interleave(ranges: &SilenceRanges) -> Vec<(bool, FrameRange)> {
     all
 }
 
-/// Extracts the portion of `clip` that overlaps `[tl_start, tl_end)`,
-/// placed at `new_start`.
-///
-/// `segment` is used to make the new clip's id unique when a single source
-/// clip is cut into multiple pieces.
 fn extract_portion(
     clip: &Clip,
     tl_start: i64,
@@ -328,7 +300,7 @@ fn extract_portion(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::silence::{SilenceStats, SilenceWarning};
+    use crate::silence::{AnalysisReport, NoiseSource, SilenceStats, SilenceWarning};
 
     const FPS30: crate::timeline::Fps = crate::timeline::Fps { num: 30, den: 1 };
 
@@ -390,21 +362,18 @@ mod tests {
             },
             noise_db: -50.0,
             warnings: Vec::<SilenceWarning>::new(),
+            report: AnalysisReport::empty(-50.0, NoiseSource::Manual),
         }
     }
 
-    // --- Remove mode ------------------------------------------------------
-
     #[test]
     fn remove_places_keeps_back_to_back() {
-        // One clip [0, 300), keep [0, 100) and [200, 300).
         let tl = timeline(vec![audio_track(1, vec![clip("a", 0, 0, 300)])]);
         let r = ranges(
             vec![FrameRange::new(0, 100), FrameRange::new(200, 300)],
             vec![FrameRange::new(100, 200)],
             300,
         );
-
         let result = apply_cuts(&tl, &r, CutMode::Remove, None);
         let clips = &result.timeline.tracks[0].clips;
         assert_eq!(clips.len(), 2);
@@ -445,7 +414,6 @@ mod tests {
             300,
         );
         let result = apply_cuts(&tl, &r, CutMode::Remove, None);
-
         for track in &result.timeline.tracks {
             assert_eq!(track.clips.len(), 2);
             assert_eq!(track.clips[0].start, 0);
@@ -483,8 +451,6 @@ mod tests {
         assert_eq!(clips[0].source_out, 300);
     }
 
-    // --- Keep mode --------------------------------------------------------
-
     #[test]
     fn keep_splits_at_every_boundary_without_shortening() {
         let tl = timeline(vec![audio_track(1, vec![clip("a", 0, 0, 300)])]);
@@ -508,8 +474,6 @@ mod tests {
         assert_eq!(result.timeline.duration_frames(), 300);
         assert!(clips.iter().all(|c| !c.muted));
     }
-
-    // --- Mute mode --------------------------------------------------------
 
     #[test]
     fn mute_marks_silence_clips_muted_on_audio_tracks() {
@@ -539,17 +503,13 @@ mod tests {
             300,
         );
         let result = apply_cuts(&tl, &r, CutMode::Mute, None);
-
         let video = &result.timeline.tracks[0];
         assert_eq!(video.kind, TrackKind::Video);
         assert!(video.clips.iter().all(|c| !c.muted));
-
         let audio = &result.timeline.tracks[1];
         assert_eq!(audio.kind, TrackKind::Audio);
         assert!(audio.clips.iter().any(|c| c.muted));
     }
-
-    // --- Gaps mode --------------------------------------------------------
 
     #[test]
     fn gaps_preserves_positions_and_drops_silence_clips() {
@@ -571,8 +531,6 @@ mod tests {
         assert_eq!(result.timeline.duration_frames(), 300);
     }
 
-    // --- Track selection --------------------------------------------------
-
     #[test]
     fn unselected_audio_tracks_are_untouched() {
         let tl = timeline(vec![
@@ -585,10 +543,8 @@ mod tests {
             300,
         );
         let result = apply_cuts(&tl, &r, CutMode::Remove, Some(&[1]));
-
         let a1 = &result.timeline.tracks[0];
         assert_eq!(a1.clips.len(), 2);
-
         let a2 = &result.timeline.tracks[1];
         assert_eq!(a2.clips.len(), 1);
         assert_eq!(a2.clips[0].source_in, 0);
@@ -610,8 +566,6 @@ mod tests {
         assert_eq!(result.timeline.tracks[0].clips.len(), 2);
         assert_eq!(result.timeline.tracks[1].clips.len(), 1);
     }
-
-    // --- Stats and idempotency -------------------------------------------
 
     #[test]
     fn stats_match_the_result() {
@@ -643,7 +597,6 @@ mod tests {
             300,
         );
         let result = apply_cuts(&tl, &r, CutMode::Keep, None);
-
         let mut ids = std::collections::HashSet::new();
         for track in &result.timeline.tracks {
             for clip in &track.clips {
@@ -667,7 +620,12 @@ mod tests {
             vec![FrameRange::new(100, 200)],
             300,
         );
-        for mode in [CutMode::Remove, CutMode::Keep, CutMode::Mute, CutMode::Gaps] {
+        for mode in [
+            CutMode::Remove,
+            CutMode::Keep,
+            CutMode::Mute,
+            CutMode::Gaps,
+        ] {
             let result = apply_cuts(&tl, &r, mode, None);
             assert!(
                 result.timeline.validate().is_ok(),
@@ -685,7 +643,12 @@ mod tests {
             vec![FrameRange::new(100, 200)],
             300,
         );
-        for mode in [CutMode::Remove, CutMode::Keep, CutMode::Mute, CutMode::Gaps] {
+        for mode in [
+            CutMode::Remove,
+            CutMode::Keep,
+            CutMode::Mute,
+            CutMode::Gaps,
+        ] {
             let _ = apply_cuts(&tl, &r, mode, None);
         }
         assert_eq!(tl, snapshot);
@@ -696,8 +659,6 @@ mod tests {
         let mut c = clip("a", 0, 0, 300);
         c.speed = 2.0;
         let tl = timeline(vec![audio_track(1, vec![c])]);
-        // At speed 2.0 the clip's timeline duration is 150 frames.
-        // Keep [0, 50), silence [50, 100), keep [100, 150).
         let r = ranges(
             vec![FrameRange::new(0, 50), FrameRange::new(100, 150)],
             vec![FrameRange::new(50, 100)],
@@ -707,11 +668,9 @@ mod tests {
         let clips = &result.timeline.tracks[0].clips;
         assert_eq!(clips.len(), 2);
         assert!(clips.iter().all(|c| (c.speed - 2.0).abs() < 1e-12));
-        // First portion: 50 timeline frames at speed 2.0 -> 100 source frames.
         assert_eq!(clips[0].source_in, 0);
         assert_eq!(clips[0].source_out, 100);
         assert_eq!(clips[0].start, 0);
-        // Second portion: source frames 200..300, timeline [50, 100).
         assert_eq!(clips[1].source_in, 200);
         assert_eq!(clips[1].source_out, 300);
         assert_eq!(clips[1].start, 50);
@@ -721,7 +680,12 @@ mod tests {
     fn full_keep_range_is_identity_in_every_mode() {
         let tl = timeline(vec![audio_track(1, vec![clip("a", 0, 0, 300)])]);
         let r = ranges(vec![FrameRange::new(0, 300)], vec![], 300);
-        for mode in [CutMode::Remove, CutMode::Keep, CutMode::Mute, CutMode::Gaps] {
+        for mode in [
+            CutMode::Remove,
+            CutMode::Keep,
+            CutMode::Mute,
+            CutMode::Gaps,
+        ] {
             let result = apply_cuts(&tl, &r, mode, None);
             let clips = &result.timeline.tracks[0].clips;
             assert_eq!(clips.len(), 1, "{mode:?}");

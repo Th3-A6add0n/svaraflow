@@ -40,13 +40,7 @@ impl Default for AudioProperties {
 /// channel count, sample rate and bit depth.
 ///
 /// Never fails on missing data: if the file has no audio stream, or the
-/// probe cannot be run, the defaults are returned. Callers that want to
-/// distinguish "no audio" from "probe failed" should check the return with
-/// their own probe.
-///
-/// `ffprobe` must be on `PATH`. When it is not, the defaults are returned
-/// and a note is printed to stderr, because a missing probe is a
-/// configuration problem the user should see.
+/// probe cannot be run, the defaults are returned.
 pub fn probe_audio_properties(path: &Path) -> AudioProperties {
     let output = match Command::new("ffprobe")
         .args([
@@ -102,10 +96,7 @@ pub fn probe_audio_properties(path: &Path) -> AudioProperties {
         .and_then(|s| s.trim().parse::<u32>().ok())
         .filter(|r| *r > 0)
         .unwrap_or(48_000);
-    let bit_depth = stream
-        .bits_per_sample
-        .filter(|b| *b > 0)
-        .unwrap_or(16);
+    let bit_depth = stream.bits_per_sample.filter(|b| *b > 0).unwrap_or(16);
 
     AudioProperties {
         channels,
@@ -145,8 +136,17 @@ fn from_media(args: &FromMediaArgs) -> Result<()> {
     }
 
     let fallback_fps = parse_fps_arg(&args.fps).map_err(|e| anyhow!("{e}"))?;
+
+    // Canonicalize once, here, where the file is known to exist.
+    // `dunce::canonicalize` strips the Windows `\\?\` verbatim prefix, so
+    // the path we embed in `timeline.json` is the plain absolute path.
+    let source = dunce::canonicalize(file)
+        .with_context(|| format!("resolving {}", file.display()))?
+        .to_string_lossy()
+        .into_owned();
+
     let probe = probe_with_ffprobe(file)?;
-    let built = build_from_probe(&probe, file, args, fallback_fps)?;
+    let built = build_from_probe(&probe, &source, args, fallback_fps)?;
 
     built
         .timeline
@@ -159,7 +159,6 @@ fn from_media(args: &FromMediaArgs) -> Result<()> {
         .map_err(|e| anyhow!("serialising timeline: {e}"))?;
     std::fs::write(&args.out, json).with_context(|| format!("writing {}", args.out.display()))?;
 
-    // Report the audio shape so the user can see what the XML will declare.
     if probe.has_audio() {
         let props = probe_audio_properties(file);
         println!(
@@ -203,24 +202,24 @@ struct Built {
     duration_frames: i64,
 }
 
+/// Builds a timeline from a probe and a resolved source path.
+///
+/// `source` is the canonical, verbatim-prefix-free absolute path that will
+/// be embedded in the timeline. It is produced by the caller (see
+/// [`from_media`]); this function does no I/O and therefore is testable
+/// with synthetic probes and synthetic paths.
 fn build_from_probe(
     probe: &Probe,
-    file: &Path,
+    source: &str,
     args: &FromMediaArgs,
     fallback_fps: Fps,
 ) -> Result<Built> {
     let duration_s = probe.duration_seconds().ok_or_else(|| {
         anyhow!(
-            "ffprobe did not report a duration for {}\nStreams seen:\n{}",
-            file.display(),
+            "ffprobe did not report a duration for {source}\nStreams seen:\n{}",
             probe.describe()
         )
     })?;
-
-    let source = dunce::canonicalize(file)
-        .with_context(|| format!("resolving {}", file.display()))?
-        .to_string_lossy()
-        .into_owned();
 
     let has_audio = probe.has_audio();
 
@@ -256,7 +255,7 @@ fn build_from_probe(
                     )
                 })?;
 
-            let duration_frames = frames_for(duration_s, fps, &file.display().to_string())?;
+            let duration_frames = frames_for(duration_s, fps, source)?;
 
             let mut tracks = Vec::with_capacity(2);
             tracks.push(Track {
@@ -264,7 +263,7 @@ fn build_from_probe(
                 index: 1,
                 clips: vec![Clip {
                     id: "video-1".to_string(),
-                    source: source.clone(),
+                    source: source.to_string(),
                     source_in: 0,
                     source_out: duration_frames,
                     start: 0,
@@ -279,7 +278,7 @@ fn build_from_probe(
                     index: 1,
                     clips: vec![Clip {
                         id: "audio-1".to_string(),
-                        source,
+                        source: source.to_string(),
                         source_in: 0,
                         source_out: duration_frames,
                         start: 0,
@@ -304,14 +303,13 @@ fn build_from_probe(
         None => {
             if !has_audio {
                 return Err(anyhow!(
-                    "{} has no video stream and no audio stream; nothing to \
+                    "{source} has no video stream and no audio stream; nothing to \
                      build a timeline from.\nStreams seen:\n{}",
-                    file.display(),
                     probe.describe()
                 ));
             }
             let fps = fallback_fps;
-            let duration_frames = frames_for(duration_s, fps, &file.display().to_string())?;
+            let duration_frames = frames_for(duration_s, fps, source)?;
 
             Ok(Built {
                 timeline: Timeline {
@@ -323,7 +321,7 @@ fn build_from_probe(
                         index: 1,
                         clips: vec![Clip {
                             id: "audio-1".to_string(),
-                            source,
+                            source: source.to_string(),
                             source_in: 0,
                             source_out: duration_frames,
                             start: 0,
@@ -579,6 +577,11 @@ fn probe_with_ffprobe(file: &Path) -> Result<Probe> {
 mod tests {
     use super::*;
 
+    /// A stable absolute path used in tests that exercise
+    /// `build_from_probe` without touching the filesystem. It must look
+    /// like the output of `dunce::canonicalize`: no `\\?\` prefix.
+    const TEST_SOURCE: &str = "C:\\media\\a.mp4";
+
     fn args_with(fps: &str, width: u32, height: u32) -> FromMediaArgs {
         FromMediaArgs {
             file: "media.mp4".into(),
@@ -680,10 +683,12 @@ mod tests {
         let probe = parse(json_audio_only());
         let args = args_with("30000/1001", 1920, 1080);
         let fps = parse_fps_arg(&args.fps).unwrap();
-        let built = build_from_probe(&probe, Path::new("media.mp4"), &args, fps).unwrap();
+        let built = build_from_probe(&probe, TEST_SOURCE, &args, fps).unwrap();
         assert!(built.audio_only);
         assert_eq!(built.timeline.tracks.len(), 1);
         assert_eq!(built.duration_frames, 375);
+        assert_eq!(built.timeline.tracks[0].kind, TrackKind::Audio);
+        assert_eq!(built.timeline.tracks[0].clips[0].source, TEST_SOURCE);
     }
 
     #[test]
@@ -691,9 +696,37 @@ mod tests {
         let probe = parse(json_video_plus_audio());
         let args = args_with("30000/1001", 1920, 1080);
         let fps = parse_fps_arg(&args.fps).unwrap();
-        let built = build_from_probe(&probe, Path::new("media.mp4"), &args, fps).unwrap();
+        let built = build_from_probe(&probe, TEST_SOURCE, &args, fps).unwrap();
         assert!(!built.audio_only);
         assert_eq!(built.timeline.tracks.len(), 2);
+        assert_eq!(built.timeline.tracks[0].kind, TrackKind::Video);
+        assert_eq!(built.timeline.tracks[1].kind, TrackKind::Audio);
+        assert_eq!(built.timeline.tracks[0].clips[0].source, TEST_SOURCE);
+    }
+
+    #[test]
+    fn build_cover_art_is_audio_only() {
+        let probe = parse(json_cover_art());
+        let args = args_with("30000/1001", 1920, 1080);
+        let fps = parse_fps_arg(&args.fps).unwrap();
+        let built = build_from_probe(&probe, TEST_SOURCE, &args, fps).unwrap();
+        assert!(built.audio_only);
+        assert_eq!(built.timeline.tracks.len(), 1);
+    }
+
+    #[test]
+    fn build_no_av_streams_errors() {
+        let json = r#"{
+            "streams": [
+                {"index": 0, "codec_type": "data", "codec_name": "bin_data"}
+            ],
+            "format": {"duration": "1.0"}
+        }"#;
+        let probe = parse(json);
+        let args = args_with("30000/1001", 1920, 1080);
+        let fps = parse_fps_arg(&args.fps).unwrap();
+        let err = build_from_probe(&probe, TEST_SOURCE, &args, fps).unwrap_err();
+        assert!(err.to_string().contains("no video stream and no audio stream"));
     }
 
     #[test]
@@ -706,8 +739,6 @@ mod tests {
 
     #[test]
     fn audio_probe_parses_stereo_aac() {
-        // Reproduces the user's source: stereo, 22050 Hz, AAC reports 0
-        // bits_per_sample.
         let json = r#"{
             "streams": [
                 {"channels": 2, "sample_rate": "22050", "bits_per_sample": 0}

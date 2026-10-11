@@ -3,8 +3,8 @@
 //! Presets live in a JSON file outside the timeline:
 //!
 //! - Windows: `%APPDATA%\SvaraFlow\presets\silence.json`
-//! - Linux:   `$XDG_CONFIG_HOME/svaraflow/presets/silence.json`, or
-//!            `~/.config/svaraflow/presets/silence.json`
+//! - Linux: `$XDG_CONFIG_HOME/svaraflow/presets/silence.json`, or
+//!   `~/.config/svaraflow/presets/silence.json`
 //!
 //! Built-in names are reserved and cannot be saved over. The file schema
 //! is documented in `docs/SCHEMAS.md`.
@@ -205,9 +205,7 @@ pub fn list_user() -> Result<Vec<(String, PresetValues)>> {
         .collect())
 }
 
-/// Imports presets from `path`, merging into the current file. Existing
-/// user presets with the same name are overwritten. Built-in names are
-/// skipped.
+/// Imports presets from `path`, merging into the current file.
 pub fn import(path: &Path) -> Result<usize> {
     let incoming = load_from(path)?;
     let mut current = load()?;
@@ -223,8 +221,7 @@ pub fn import(path: &Path) -> Result<usize> {
     Ok(imported)
 }
 
-/// Exports user presets to `path`. Only user presets are written; the
-/// built-ins are always available and need not be stored.
+/// Exports user presets to `path`.
 pub fn export(path: &Path) -> Result<usize> {
     let current = load()?;
     let count = current.presets.len();
@@ -299,8 +296,7 @@ mod tests {
 
     #[test]
     fn save_user_refuses_builtin_names() {
-        let err = save_user("natural", PresetValues::from(BuiltinPreset::Natural.values()))
-            .unwrap_err();
+        let err = save_user("natural", BuiltinPreset::Natural.values()).unwrap_err();
         assert!(err.to_string().contains("read-only"), "{err}");
     }
 

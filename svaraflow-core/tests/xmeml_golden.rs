@@ -1,19 +1,14 @@
 //! Golden and structural tests for the FCP7 XML and CMX3600 EDL writers.
-//!
-//! The golden tests compare the writers' output byte-for-byte against
-//! `tests/fixtures/golden.xml` and `tests/fixtures/golden.edl`. The
-//! structural tests assert shape properties that must hold regardless of
-//! fixture contents (audio-only output has no `<video>` block, and so on).
-//!
-//! When a golden fixture changes intentionally, run with `UPDATE_GOLDEN=1`
-//! and review the diff. The escape hatch exists so a deliberate format
-//! change does not require hand-editing XML.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
-use svaraflow_core::silence::{FrameRange, SilenceRanges, SilenceStats, SilenceWarning};
+use svaraflow_core::silence::{
+    AnalysisReport, FrameRange, NoiseSource, SilenceRanges, SilenceStats, SilenceWarning,
+};
 use svaraflow_core::timeline::{Clip, Fps, Timeline, Track, TrackKind};
-use svaraflow_core::{write_edl, write_xmeml};
+use svaraflow_core::xmeml::{write_xmeml, SourceInfo, XmlProfile};
+use svaraflow_core::write_edl;
 
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
@@ -32,8 +27,6 @@ fn update(name: &str, actual: &str) {
     }
 }
 
-/// A two-track, two-clip timeline at 30 fps: one video clip, one audio
-/// clip, both spanning frames 0..300.
 fn golden_timeline() -> Timeline {
     let video = Clip {
         id: "v1".into(),
@@ -74,7 +67,6 @@ fn golden_timeline() -> Timeline {
     }
 }
 
-/// Keep [0, 100) and [200, 300); remove [100, 200).
 fn golden_ranges() -> SilenceRanges {
     let keep = vec![FrameRange::new(0, 100), FrameRange::new(200, 300)];
     let silences = vec![FrameRange::new(100, 200)];
@@ -90,13 +82,19 @@ fn golden_ranges() -> SilenceRanges {
         },
         noise_db: -50.0,
         warnings: Vec::<SilenceWarning>::new(),
+        report: AnalysisReport::empty(-50.0, NoiseSource::Manual),
     }
+}
+
+fn sources_for(tl: &Timeline) -> HashMap<String, SourceInfo> {
+    SourceInfo::from_timeline(tl)
 }
 
 #[test]
 fn xmeml_matches_golden() {
     let tl = golden_timeline();
-    let actual = write_xmeml(&tl, "Original Sequence").unwrap();
+    let sources = sources_for(&tl);
+    let actual = write_xmeml(&tl, "Original Sequence", XmlProfile::Full, &sources).unwrap();
     update("golden.xml", &actual);
     assert_eq!(actual, golden("golden.xml"), "xmeml output changed");
 }
@@ -113,21 +111,18 @@ fn edl_matches_golden() {
 #[test]
 fn xmeml_is_valid_utf8_xml_shape() {
     let tl = golden_timeline();
-    let xml = write_xmeml(&tl, "x").unwrap();
+    let sources = sources_for(&tl);
+    let xml = write_xmeml(&tl, "x", XmlProfile::Full, &sources).unwrap();
     assert!(xml.starts_with("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"));
-    assert!(xml.contains("<!DOCTYPE xmeml SYSTEM \"fcpxmlv4.dtd\">"));
+    assert!(xml.contains("<!DOCTYPE xmeml>"));
     assert!(xml.contains("<xmeml version=\"4\">"));
     assert!(xml.trim_end().ends_with("</xmeml>"));
-    // No placeholder text.
     assert!(!xml.contains("..."));
     assert!(!xml.contains("TODO"));
 }
 
-/// An audio-only timeline produces an `<audio>` block and no `<video>`
-/// block. This is what `svaraflow-cli timeline from-media` writes for an
-/// audio-only source, and both Resolve and Premiere import it.
 #[test]
-fn xmeml_audio_only_has_no_video_block() {
+fn xmeml_audio_only_has_no_video_block_clips() {
     let tl = Timeline {
         fps: Fps {
             num: 30_000,
@@ -150,25 +145,23 @@ fn xmeml_audio_only_has_no_video_block() {
             }],
         }],
     };
-    let xml = write_xmeml(&tl, "Audio Only").unwrap();
+    let sources = sources_for(&tl);
+    let xml = write_xmeml(&tl, "Audio Only", XmlProfile::Full, &sources).unwrap();
 
     assert!(xml.contains("<audio>"), "{xml}");
     assert!(xml.contains("</audio>"), "{xml}");
-    assert!(!xml.contains("<video>"), "audio-only XML must not emit a video block: {xml}");
-    assert!(!xml.contains("<video/>"), "{xml}");
+    // The Full profile still emits an empty video block for host
+    // compatibility, but no clipitem inside it.
+    assert!(xml.contains("<video>"), "{xml}");
+    assert!(xml.contains("<track/>"), "{xml}");
+    assert!(!xml.contains("clipitem id=\"vclip"), "{xml}");
 
-    // The NTSC flag is set because the timeline is 30000/1001.
     assert!(xml.contains("<ntsc>TRUE</ntsc>"), "{xml}");
     assert!(xml.contains("<timebase>30</timebase>"), "{xml}");
-
-    // The clipitem is present with the right frames.
-    assert!(xml.contains("<clipitem id=\"audio-1\">"), "{xml}");
+    assert!(xml.contains("<clipitem id=\"clip-0\">"), "{xml}");
     assert!(xml.contains("<end>375</end>"), "{xml}");
 }
 
-/// An EDL for an audio-only timeline still writes the header and events.
-/// The EDL has no notion of track kind, so the shape is the same as for a
-/// video timeline.
 #[test]
 fn edl_audio_only_writes_events() {
     let tl = Timeline {
@@ -205,10 +198,10 @@ fn edl_audio_only_writes_events() {
         },
         noise_db: -50.0,
         warnings: Vec::<SilenceWarning>::new(),
+        report: AnalysisReport::empty(-50.0, NoiseSource::Manual),
     };
     let edl = write_edl(&tl, &ranges, "Audio Only").unwrap();
     assert!(edl.starts_with("TITLE: Audio Only\n"));
-    // 30000/1001 is drop-frame by our `is_ntsc()` rule.
     assert!(edl.contains("FCM: DROP FRAME"));
     assert!(edl.contains("001  AX"));
     assert!(edl.contains("002  AX"));

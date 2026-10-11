@@ -1,19 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE xmeml SYSTEM "fcpxmlv4.dtd">
+<!DOCTYPE xmeml>
 <xmeml version="4">
-  <sequence>
+  <sequence id="sequence-1">
+    <uuid>6B96122D-37A7-9170-3DE8-BEFB82260B1C</uuid>
     <name>Original Sequence - SvaraFlow cut</name>
     <duration>300</duration>
     <rate>
       <ntsc>FALSE</ntsc>
       <timebase>30</timebase>
     </rate>
-    <in>-1</in>
-    <out>-1</out>
+    <timecode>
+      <rate>
+        <ntsc>FALSE</ntsc>
+        <timebase>30</timebase>
+      </rate>
+      <string>00:00:00:00</string>
+      <frame>0</frame>
+      <displayformat>NDF</displayformat>
+    </timecode>
     <media>
       <video>
+        <format>
+          <samplecharacteristics>
+            <width>1920</width>
+            <height>1080</height>
+            <pixelaspectratio>square</pixelaspectratio>
+            <rate>
+              <ntsc>FALSE</ntsc>
+              <timebase>30</timebase>
+            </rate>
+            <fielddominance>none</fielddominance>
+          </samplecharacteristics>
+        </format>
         <track>
-          <clipitem id="v1">
+          <clipitem id="vclip-0">
             <name>v1</name>
             <duration>300</duration>
             <rate>
@@ -21,11 +41,11 @@
               <timebase>30</timebase>
             </rate>
             <enabled>TRUE</enabled>
-            <start>0</start>
-            <end>300</end>
             <in>0</in>
             <out>300</out>
-            <file id="file-v1">
+            <start>0</start>
+            <end>300</end>
+            <file id="file-1">
               <name>interview.mov</name>
               <pathurl>file://localhost/C%3a/media/interview.mov</pathurl>
               <rate>
@@ -33,27 +53,49 @@
                 <timebase>30</timebase>
               </rate>
               <duration>300</duration>
-              <in>0</in>
-              <out>300</out>
+              <timecode>
+                <rate>
+                  <ntsc>FALSE</ntsc>
+                  <timebase>30</timebase>
+                </rate>
+                <string>00:00:00:00</string>
+                <frame>0</frame>
+                <displayformat>NDF</displayformat>
+              </timecode>
+              <media>
+                <video>
+                  <samplecharacteristics>
+                    <width>1920</width>
+                    <height>1080</height>
+                  </samplecharacteristics>
+                </video>
+                <audio>
+                  <samplecharacteristics>
+                    <depth>16</depth>
+                    <samplerate>48000</samplerate>
+                  </samplecharacteristics>
+                  <channelcount>0</channelcount>
+                </audio>
+              </media>
             </file>
-            <link>
-              <linkclipref>v1</linkclipref>
+            <sourcetrack>
               <mediatype>video</mediatype>
               <trackindex>1</trackindex>
-              <clipindex>1</clipindex>
-            </link>
-            <link>
-              <linkclipref>a1</linkclipref>
-              <mediatype>audio</mediatype>
-              <trackindex>1</trackindex>
-              <clipindex>1</clipindex>
-            </link>
+            </sourcetrack>
           </clipitem>
         </track>
       </video>
       <audio>
+        <numOutputChannels>1</numOutputChannels>
+        <format>
+          <samplecharacteristics>
+            <depth>16</depth>
+            <samplerate>48000</samplerate>
+          </samplecharacteristics>
+        </format>
         <track>
-          <clipitem id="a1">
+          <outputchannelindex>1</outputchannelindex>
+          <clipitem id="clip-0">
             <name>a1</name>
             <duration>300</duration>
             <rate>
@@ -61,11 +103,11 @@
               <timebase>30</timebase>
             </rate>
             <enabled>TRUE</enabled>
-            <start>0</start>
-            <end>300</end>
             <in>0</in>
             <out>300</out>
-            <file id="file-a1">
+            <start>0</start>
+            <end>300</end>
+            <file id="file-1">
               <name>interview.mov</name>
               <pathurl>file://localhost/C%3a/media/interview.mov</pathurl>
               <rate>
@@ -73,21 +115,35 @@
                 <timebase>30</timebase>
               </rate>
               <duration>300</duration>
-              <in>0</in>
-              <out>300</out>
+              <timecode>
+                <rate>
+                  <ntsc>FALSE</ntsc>
+                  <timebase>30</timebase>
+                </rate>
+                <string>00:00:00:00</string>
+                <frame>0</frame>
+                <displayformat>NDF</displayformat>
+              </timecode>
+              <media>
+                <video>
+                  <samplecharacteristics>
+                    <width>1920</width>
+                    <height>1080</height>
+                  </samplecharacteristics>
+                </video>
+                <audio>
+                  <samplecharacteristics>
+                    <depth>16</depth>
+                    <samplerate>48000</samplerate>
+                  </samplecharacteristics>
+                  <channelcount>0</channelcount>
+                </audio>
+              </media>
             </file>
-            <link>
-              <linkclipref>v1</linkclipref>
-              <mediatype>video</mediatype>
-              <trackindex>1</trackindex>
-              <clipindex>1</clipindex>
-            </link>
-            <link>
-              <linkclipref>a1</linkclipref>
+            <sourcetrack>
               <mediatype>audio</mediatype>
               <trackindex>1</trackindex>
-              <clipindex>1</clipindex>
-            </link>
+            </sourcetrack>
           </clipitem>
         </track>
       </audio>

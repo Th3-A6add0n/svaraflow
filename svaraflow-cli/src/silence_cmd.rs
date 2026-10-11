@@ -46,8 +46,8 @@ pub fn run(args: SilenceCli) -> Result<()> {
 fn print_presets() -> Result<()> {
     let user = presets::list_user()?;
     println!(
-        "{:<16} {:>8} {:>6} {:>8} {:>8} {:>12} {:<8} {}",
-        "NAME", "REMOVE", "KEEP", "MARG-B", "MARG-A", "MIN-BETWEEN", "SNAP", "SOURCE"
+        "{:<16} {:>8} {:>6} {:>8} {:>8} {:>12} {:<8} SOURCE",
+        "NAME", "REMOVE", "KEEP", "MARG-B", "MARG-A", "MIN-BETWEEN", "SNAP",
     );
     for p in BuiltinPreset::ALL {
         let v = p.values();
@@ -256,7 +256,6 @@ fn resolve_params(opts: &DetectionOptions) -> Result<SilenceParams> {
     let builtin = preset_from_arg(opts.preset);
     let mut params = SilenceParams::from_preset(builtin);
 
-    // Explicit ms flags override the preset.
     if let Some(x) = opts.remove_silences_ms {
         params.remove_silences_ms = x;
     }
@@ -273,8 +272,6 @@ fn resolve_params(opts: &DetectionOptions) -> Result<SilenceParams> {
         params.min_between_cuts_ms = x;
     }
 
-    // Deprecated second-based flags override the preset too, but the ms
-    // flags win when both are supplied.
     if let Some(s) = opts.min_silence {
         if opts.remove_silences_ms.is_none() {
             eprintln!("warning: --min-silence is deprecated; use --remove-silences-ms");
@@ -579,7 +576,10 @@ fn print_analysis_human(a: &Analysis) {
 
     if !r.longest_cuts.is_empty() {
         println!();
-        println!("Longest remaining cuts ({} shown):", r.longest_cuts.len().min(5));
+        println!(
+            "Longest remaining cuts ({} shown):",
+            r.longest_cuts.len().min(5)
+        );
         for c in r.longest_cuts.iter().take(5) {
             println!(
                 "  [{}, {})  {} frames  {:.3} s",
@@ -722,19 +722,6 @@ fn apply(args: &ApplyArgs) -> Result<()> {
 }
 
 /// Builds per-source metadata for the XML writer.
-///
-/// `total_frames` for each source is the maximum `source_out` across the
-/// **original** timeline, so the file duration reflects the true source
-/// length even after the cut dropped the tail. Sources that appear only in
-/// the cut timeline fall back to their own `source_out`.
-///
-/// Channel count, sample rate and bit depth come from `ffprobe` on each
-/// source that appears on an audio track. When `channels_arg` is
-/// [`AudioChannelsArg::Mono`] or [`AudioChannelsArg::Stereo`], the probe is
-/// still consulted for the sample rate and bit depth, but the channel count
-/// is forced to the requested value. When it is [`AudioChannelsArg::Auto`],
-/// the probe's channel count is used and a failure falls back to mono
-/// 48 kHz with a warning on stderr.
 fn build_source_info(
     original: &Timeline,
     cut: &Timeline,
@@ -786,16 +773,13 @@ fn build_source_info(
     map
 }
 
-/// Builds a [`SourceInfo`] with `total_frames = 0` and default audio
-/// properties. Audio and video presence are set from the track kind; the
-/// audio properties are overwritten by the probe pass in
-/// [`build_source_info`].
 fn source_info_stub(kind: TrackKind, timeline: &Timeline) -> SourceInfo {
-    let mut info = SourceInfo::default();
-    info.has_video = kind == TrackKind::Video;
-    info.video_width = timeline.width;
-    info.video_height = timeline.height;
-    info
+    SourceInfo {
+        has_video: kind == TrackKind::Video,
+        video_width: timeline.width,
+        video_height: timeline.height,
+        ..SourceInfo::default()
+    }
 }
 
 fn format_fps(fps: Fps) -> String {

@@ -31,7 +31,8 @@ pub fn write_wav(path: &Path, samples: &[f32], sample_rate: u32) -> std::io::Res
 
     let byte_rate = sample_rate * u32::from(CHANNELS) * u32::from(BITS_PER_SAMPLE) / 8;
     let block_align = CHANNELS * BITS_PER_SAMPLE / 8;
-    let data_size = (samples.len() as u32) * u32::from(CHANNELS) * u32::from(BITS_PER_SAMPLE) / 8;
+    let data_size =
+        (samples.len() as u32) * u32::from(CHANNELS) * u32::from(BITS_PER_SAMPLE) / 8;
     let riff_size = 36 + data_size;
 
     let mut file = std::fs::File::create(path)?;
@@ -39,8 +40,8 @@ pub fn write_wav(path: &Path, samples: &[f32], sample_rate: u32) -> std::io::Res
     file.write_all(&riff_size.to_le_bytes())?;
     file.write_all(b"WAVE")?;
     file.write_all(b"fmt ")?;
-    file.write_all(&16u32.to_le_bytes())?; // fmt chunk size for PCM
-    file.write_all(&1u16.to_le_bytes())?; // audio format 1 = PCM
+    file.write_all(&16u32.to_le_bytes())?;
+    file.write_all(&1u16.to_le_bytes())?;
     file.write_all(&CHANNELS.to_le_bytes())?;
     file.write_all(&sample_rate.to_le_bytes())?;
     file.write_all(&byte_rate.to_le_bytes())?;
@@ -60,7 +61,7 @@ pub fn write_wav(path: &Path, samples: &[f32], sample_rate: u32) -> std::io::Res
 /// Appends `duration_s` seconds of silence to `out` at `sample_rate`.
 pub fn append_silence(out: &mut Vec<f32>, duration_s: f64, sample_rate: u32) {
     let count = (duration_s * f64::from(sample_rate)).round() as usize;
-    out.extend(std::iter::repeat_n(0.0f32, count));
+    out.resize(out.len() + count, 0.0f32);
 }
 
 /// Appends `duration_s` seconds of a 1 kHz sine at `amplitude` to `out`.
@@ -93,7 +94,6 @@ mod tests {
         let samples: Vec<f32> = (0..1600).map(|i| (i as f32 / 1600.0) * 2.0 - 1.0).collect();
         write_wav(&path, &samples, 16_000).unwrap();
         let metadata = std::fs::metadata(&path).unwrap();
-        // 44-byte header + 1600 samples * 2 bytes.
         assert_eq!(metadata.len(), 44 + 3200);
     }
 
@@ -103,6 +103,15 @@ mod tests {
         append_silence(&mut out, 0.5, 16_000);
         assert_eq!(out.len(), 8_000);
         assert!(out.iter().all(|s| *s == 0.0));
+    }
+
+    #[test]
+    fn append_silence_appends_to_existing_content() {
+        let mut out = vec![0.5f32; 100];
+        append_silence(&mut out, 0.5, 16_000);
+        assert_eq!(out.len(), 8_100);
+        assert!(out[..100].iter().all(|s| (*s - 0.5).abs() < 1e-6));
+        assert!(out[100..].iter().all(|s| *s == 0.0));
     }
 
     #[test]

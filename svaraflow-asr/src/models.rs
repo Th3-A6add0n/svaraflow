@@ -8,8 +8,8 @@
 //! Model files live outside the repository, in a per-user folder:
 //!
 //! - Windows: `%LOCALAPPDATA%\SvaraFlow\models`
-//! - Linux:   `$XDG_DATA_HOME/svaraflow/models`, or
-//!            `~/.local/share/svaraflow/models`
+//! - Linux: `$XDG_DATA_HOME/svaraflow/models`, or
+//!   `~/.local/share/svaraflow/models`
 //!
 //! The downloader resumes interrupted transfers with HTTP `Range` requests
 //! and verifies the file's SHA-256 against the manifest when the manifest
@@ -28,13 +28,16 @@ use sha2::{Digest, Sha256};
 use crate::error::AsrError;
 
 /// The manifest, embedded at compile time.
-const MANIFEST_JSON: &str = include_str!("../../../models.json");
+///
+/// The path is relative to this file's directory, so `../../` reaches the
+/// workspace root from `svaraflow-asr/src/`.
+const MANIFEST_JSON: &str = include_str!("../../models.json");
 
 /// The literal that marks a manifest field as not yet filled in.
 pub const TODO_SENTINEL: &str = "TODO";
 
 /// One of the two speed/accuracy tiers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Tier {
     /// Whisper-base-sized model. Fast, lower accuracy.
@@ -161,8 +164,7 @@ impl Manifest {
 /// Where models live on this machine.
 ///
 /// Never fails: falls back to `./models` relative to the working directory
-/// when neither environment variable is set. Callers that need certainty
-/// should call [`storage_dir`] and handle its error.
+/// when neither environment variable is set.
 #[must_use]
 pub fn storage_dir() -> PathBuf {
     storage_dir_result().unwrap_or_else(|_| PathBuf::from("models"))
@@ -270,7 +272,6 @@ pub fn ensure_model(
         if actual.eq_ignore_ascii_case(&entry.sha256) {
             return Ok(final_path);
         }
-        // Corrupt or stale: remove and fall through to re-download.
         let _ = fs::remove_file(&final_path);
     }
 
@@ -289,7 +290,6 @@ pub fn ensure_model(
     let start_byte = fs::metadata(&part_path).map(|m| m.len()).unwrap_or(0);
     download_resumable(entry, &part_path, start_byte, progress)?;
 
-    // Verify the completed file.
     if entry.has_real_hash() {
         let actual = hash_file(&part_path)?;
         if !actual.eq_ignore_ascii_case(&entry.sha256) {
@@ -308,10 +308,6 @@ pub fn ensure_model(
 }
 
 /// Runs the download loop with resume support.
-///
-/// **API risk.** The `ureq` 3 call chain below is written from the 3.x
-/// docs. If `into_body().into_reader()` is not the right accessor, the
-/// compiler will say so; the fix is one method name.
 fn download_resumable(
     entry: &ModelEntry,
     part_path: &Path,
@@ -331,8 +327,6 @@ fn download_resumable(
 
     let status = response.status().as_u16();
     let (append, total) = match status {
-        // Partial content: server honoured the range. Parse the total from
-        // `Content-Range: bytes <start>-<end>/<total>`.
         206 => {
             let total = response
                 .headers()
@@ -342,7 +336,6 @@ fn download_resumable(
                 .and_then(|s| s.trim().parse::<u64>().ok());
             (true, total)
         }
-        // Server ignored the range and sent the whole file. Restart.
         200 => {
             let total = response
                 .headers()
@@ -385,7 +378,6 @@ fn download_resumable(
     }
     out.sync_all()?;
 
-    // Sanity: if the manifest declared a size, the file should match.
     if entry.size_bytes > 0 && written != entry.size_bytes {
         return Err(AsrError::Download {
             name: entry.name.clone(),
@@ -473,8 +465,6 @@ mod tests {
     #[test]
     fn todo_hashes_are_detected() {
         let m = Manifest::load_embedded().unwrap();
-        // The manifest shipped in this repo has TODO hashes; that is
-        // exactly the state the downloader is designed to tolerate.
         for e in &m.models {
             assert!(!e.has_real_hash(), "{} carries a real hash", e.name);
             assert!(!e.has_real_url(), "{} carries a real url", e.name);
@@ -490,13 +480,21 @@ mod tests {
     }
 
     #[test]
+    fn by_tier_produces_a_map() {
+        let m = Manifest::load_embedded().unwrap();
+        let map = m.by_tier();
+        assert_eq!(map.len(), 2);
+        assert!(map.contains_key(&Tier::Light));
+        assert!(map.contains_key(&Tier::Standard));
+    }
+
+    #[test]
     fn storage_dir_does_not_panic() {
         let _ = storage_dir();
     }
 
     #[test]
     fn hash_file_matches_known_vector() {
-        // SHA-256 of the empty string.
         let tmp = std::env::temp_dir().join("svaraflow-asr-empty-hash-test.bin");
         std::fs::write(&tmp, b"").unwrap();
         let h = hash_file(&tmp).unwrap();
@@ -509,7 +507,6 @@ mod tests {
 
     #[test]
     fn hash_file_matches_abc() {
-        // SHA-256 of "abc".
         let tmp = std::env::temp_dir().join("svaraflow-asr-abc-hash-test.bin");
         std::fs::write(&tmp, b"abc").unwrap();
         let h = hash_file(&tmp).unwrap();

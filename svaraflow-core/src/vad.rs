@@ -292,8 +292,10 @@ pub fn apply_vad_rules(raw: &[bool], seconds_per_window: f64, params: &VadParams
 
     let mut out = vec![false; raw.len()];
     for r in merged {
-        for i in r.start..r.end {
-            out[i as usize] = true;
+        let start = r.start.max(0) as usize;
+        let end = (r.end.max(0) as usize).min(out.len());
+        if start < end {
+            out[start..end].fill(true);
         }
     }
     out
@@ -385,14 +387,17 @@ pub fn hybrid_snap(mask: &[bool], envelope_db: &[f32], radius_frames: usize) -> 
             continue;
         }
 
-        let mut best_idx = b;
-        let mut best_level = envelope_db[b];
-        for i in lo..=hi {
-            if envelope_db[i] < best_level {
-                best_level = envelope_db[i];
-                best_idx = i;
-            }
-        }
+        // Find the lowest-energy frame in [lo, hi]. Written with an
+        // explicit window rather than a range loop so clippy can see the
+        // access pattern.
+        let window = &envelope_db[lo..=hi];
+        let (offset, &level) = window
+            .iter()
+            .enumerate()
+            .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+            .expect("window is non-empty because hi > lo");
+        let best_idx = lo + offset;
+
         if best_idx == b {
             continue;
         }
@@ -401,15 +406,14 @@ pub fn hybrid_snap(mask: &[bool], envelope_db: &[f32], radius_frames: usize) -> 
         let after = mask[b];
         if best_idx < b {
             // The new value (after) extends earlier over [best_idx, b).
-            for i in best_idx..b {
-                snapped[i] = after;
-            }
+            snapped[best_idx..b].fill(after);
         } else {
             // The old value (before) extends later over [b, best_idx).
-            for i in b..best_idx {
-                snapped[i] = before;
-            }
+            snapped[b..best_idx].fill(before);
         }
+        // Silence an unused-variable lint: `level` is the value at
+        // `best_idx` and is only used to drive the comparison above.
+        let _ = level;
     }
 
     snapped
@@ -451,8 +455,6 @@ mod tests {
 
     #[test]
     fn apply_vad_rules_drops_short_speech() {
-        // 10 windows at 32 ms each. One true at index 5 (32 ms of speech).
-        // min_speech = 250 ms -> 8 windows; the run is dropped.
         let raw = vec![false; 5]
             .into_iter()
             .chain(vec![true])
@@ -464,7 +466,6 @@ mod tests {
 
     #[test]
     fn apply_vad_rules_keeps_long_speech() {
-        // 10 true windows = 320 ms, above the 250 ms min_speech.
         let raw = vec![false, false]
             .into_iter()
             .chain(vec![true; 10])
@@ -476,9 +477,6 @@ mod tests {
 
     #[test]
     fn apply_vad_rules_fills_short_silence() {
-        // Two long speech runs separated by a single silence window.
-        // min_silence = 100 ms -> 4 windows at 32 ms. The 1-window gap is
-        // filled.
         let mut raw = vec![true; 8];
         raw.push(false);
         raw.extend(vec![true; 8]);
@@ -488,9 +486,6 @@ mod tests {
 
     #[test]
     fn apply_vad_rules_pads_boundaries() {
-        // 20 false, 10 true, 20 false. min_speech = 250 ms -> 8 windows,
-        // the 10-true run survives. min_silence = 100 ms -> 4 windows.
-        // speech_pad = 30 ms -> 1 window each side.
         let mut raw = vec![false; 20];
         raw.extend(vec![true; 10]);
         raw.extend(vec![false; 20]);
@@ -505,8 +500,6 @@ mod tests {
 
     #[test]
     fn resample_upsamples_32ms_to_10ms() {
-        // 1 second of Silero mask at 32 ms: 31 windows (0..30).
-        // First 16 windows true, rest false.
         let mut speech = vec![true; 16];
         speech.extend(vec![false; 15]);
         let mask = VadMask {
@@ -514,10 +507,8 @@ mod tests {
             hop_samples: VAD_WINDOW_SAMPLES,
             sample_rate: VAD_SAMPLE_RATE,
         };
-        // Resample to 100 Hz (10 ms frames), 100 frames.
         let out = mask.resample_to(0.010, 100);
         assert_eq!(out.len(), 100);
-        // Windows 0..16 cover 0..512 ms. Frames 0..50 are speech-dominant.
         assert!(out[0], "frame 0 should be speech");
         assert!(out[49], "frame 49 should be speech");
         assert!(!out[52], "frame 52 should be silence");
@@ -554,7 +545,6 @@ mod tests {
 
     #[test]
     fn stub_vad_handles_short_input() {
-        // Fewer than one window: zero complete windows.
         let mut vad = StubVad;
         let probs = vad.speech_probabilities(&[0.0; 100]).unwrap();
         assert!(probs.values.is_empty());
@@ -564,17 +554,12 @@ mod tests {
 
     #[test]
     fn hybrid_snap_moves_boundary_to_lower_energy() {
-        // Mask [F F T T T F F] with a boundary at 2 (F->T) and 5 (T->F).
-        // Envelope has a dip at index 1 and a dip at index 6, both within
-        // radius 1, so the boundaries should snap outward.
         let mask = vec![false, false, true, true, true, false, false];
         let env: Vec<f32> = vec![-30.0, -80.0, -20.0, -20.0, -20.0, -30.0, -80.0];
         let out = hybrid_snap(&mask, &env, 1);
-        // The F->T transition moves from 2 to 1.
         assert!(!out[0]);
         assert!(out[1], "transition should have moved to index 1");
         assert!(out[4]);
-        // The T->F transition moves from 5 to 6.
         assert!(out[5], "frame 5 stays speech");
         assert!(!out[6], "frame 6 becomes silence");
     }
