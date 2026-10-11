@@ -1,3 +1,4 @@
+// svaraflow-core/src/xmeml.rs
 //! FCP7 XML (`xmeml` version 4) export.
 //!
 //! Writes a new sequence named `"{original} - SvaraFlow cut"` that references
@@ -38,9 +39,27 @@
 //!
 //! # Paths
 //!
-//! [`encode_path_url`] strips the Windows `\\?\` verbatim prefix and
-//! percent-encodes with **lowercase** hex, producing
-//! `file://localhost/C%3a/Users/...`. Spaces become `%20`.
+//! Paths in this module are treated as **strings**, never as
+//! [`std::path::Path`]. A source string is interpreted the same way on
+//! every host: Windows drive letters (`C:\media\x.mov`), the Windows
+//! verbatim prefix (`\\?\C:\media\x.mov`), and POSIX paths
+//! (`/home/user/media/x.mov`) all parse the same whether the code is
+//! compiled for Windows, Linux or macOS.
+//!
+//! [`encode_path_url`] strips the Windows `\\?\` verbatim prefix (but not
+//! the `\\?\UNC\` prefix — removing it would change the path's meaning)
+//! and percent-encodes every byte outside the unreserved set plus `/`,
+//! with **lowercase** hex. A POSIX-leading `/` is absorbed so the result is
+//! always `file://localhost/…`, never `file://localhost//…`.
+//!
+//! [`source_basename`] returns the final path component of a source
+//! string, splitting on both `/` and `\` regardless of host. This is what
+//! goes into `<file><name>` so the element holds `interview.mov`, not
+//! `C:\media\interview.mov`, on every OS.
+//!
+//! Neither function can emit a `\\?\` prefix: `source_basename` uses the
+//! stripped form, and `encode_path_url` percent-encodes `?` and `\` in the
+//! body if any survive.
 
 use std::collections::HashMap;
 
@@ -646,10 +665,11 @@ fn write_file_full(
     file.push_attribute(("id", file_id));
     writer.write_event(Event::Start(file)).map_err(io_err)?;
 
-    let basename = std::path::Path::new(&clip.source)
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(&clip.source);
+    // Use the pure-string basename helper, NOT `std::path::Path::file_name`.
+    // The latter applies the host's separator rules, so the same source
+    // string yields a different `<name>` on Windows and Linux, which is
+    // what made the golden test fail on CI.
+    let basename = source_basename(&clip.source);
     write_element(writer, "name", basename)?;
     write_element(writer, "pathurl", &encode_path_url(&clip.source))?;
     write_rate(writer, fps)?;
@@ -762,19 +782,80 @@ fn is_drop_frame(fps: Fps) -> bool {
 // Paths and ids
 // ---------------------------------------------------------------------------
 
-/// Percent-encodes an absolute media path into a `file://localhost/…` URL.
+/// Returns the final path component of a source string, splitting on both
+/// `/` and `\` regardless of host platform.
 ///
-/// Strips the Windows `\\?\` verbatim prefix first. `C:\media\a b.mov`
-/// becomes `file://localhost/C%3a/media/a%20b.mov`. Drive letters are
-/// case-preserved; backslashes become forward slashes; every byte outside
-/// the unreserved set plus `/` is percent-encoded as **lowercase** hex.
+/// This is the string used for `<file><name>`. It is deliberately *not*
+/// implemented with [`std::path::Path::file_name`]: that function applies
+/// the host's separator rules, so `C:\media\x.mov` returns `x.mov` on
+/// Windows but the whole string on Linux. Both are legal Cargo builds of
+/// the same code, and both must produce the same XML.
+///
+/// The Windows `\\?\` prefix is stripped first (see
+/// [`strip_verbatim_prefix`]). The `\\?\UNC\…` prefix is kept, but its
+/// final component is still extracted correctly because the split is on
+/// the separator character, not on a parsed path.
+///
+/// # Examples
+///
+/// ```
+/// # use svaraflow_core::xmeml::source_basename;
+/// assert_eq!(source_basename(r"C:\media\interview.mov"), "interview.mov");
+/// assert_eq!(source_basename(r"\\?\C:\media\interview.mov"), "interview.mov");
+/// assert_eq!(source_basename("/home/user/media/interview.mov"), "interview.mov");
+/// assert_eq!(source_basename("interview.mov"), "interview.mov");
+/// ```
+#[must_use]
+pub fn source_basename(source: &str) -> &str {
+    let cleaned = strip_verbatim_prefix(source);
+    cleaned
+        .rsplit(['/', '\\'])
+        .find(|s| !s.is_empty())
+        .unwrap_or(cleaned)
+}
+
+/// Percent-encodes a media path into a `file://localhost/…` URL.
+///
+/// Handles both Windows and POSIX source strings, and the same input
+/// produces the same output on every host. Steps:
+///
+/// 1. Strips the Windows `\\?\` verbatim prefix (see
+///    [`strip_verbatim_prefix`]). The `\\?\UNC\…` form is kept intact
+///    because dropping the prefix would change the path's meaning.
+/// 2. Replaces every `\` with `/`.
+/// 3. If the result begins with `/` (a POSIX absolute path), absorbs the
+///    leading slash so the URL is `file://localhost/…` rather than
+///    `file://localhost//…`.
+/// 4. Percent-encodes every byte outside the unreserved set plus `/`,
+///    using **lowercase** hex digits.
+///
+/// # Examples
+///
+/// ```
+/// # use svaraflow_core::xmeml::encode_path_url;
+/// assert_eq!(
+///     encode_path_url(r"C:\Users\me\a b.mp4"),
+///     "file://localhost/C%3a/Users/me/a%20b.mp4"
+/// );
+/// assert_eq!(
+///     encode_path_url(r"\\?\C:\Users\me\a b.mp4"),
+///     "file://localhost/C%3a/Users/me/a%20b.mp4"
+/// );
+/// assert_eq!(
+///     encode_path_url("/home/user/a b.mp4"),
+///     "file://localhost/home/user/a%20b.mp4"
+/// );
+/// ```
 #[must_use]
 pub fn encode_path_url(path: &str) -> String {
     let cleaned = strip_verbatim_prefix(path);
     let normalized = cleaned.replace('\\', "/");
-    let mut out = String::with_capacity(normalized.len() + 24);
+    // Absorb one leading slash so POSIX absolute paths do not produce a
+    // double slash after the `file://localhost/` prefix.
+    let body = normalized.strip_prefix('/').unwrap_or(&normalized);
+    let mut out = String::with_capacity(body.len() + 24);
     out.push_str("file://localhost/");
-    for byte in normalized.bytes() {
+    for byte in body.bytes() {
         match byte {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
                 out.push(byte as char);
@@ -802,7 +883,9 @@ fn strip_verbatim_prefix(path: &str) -> &str {
 /// Produces a UUID-shaped string derived from `seed` and the current time.
 ///
 /// Not cryptographically random. FCP7 uses the uuid only as a stable
-/// identifier inside one document; it is not a security token.
+/// identifier inside one document; it is not a security token. The golden
+/// test normalises its content away, so the value is free to change
+/// between runs.
 fn make_uuid(seed: &str) -> String {
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hasher};
@@ -911,6 +994,55 @@ mod tests {
     }
 
     #[test]
+    fn source_basename_windows_path() {
+        assert_eq!(source_basename(r"C:\media\interview.mov"), "interview.mov");
+    }
+
+    #[test]
+    fn source_basename_windows_verbatim_path() {
+        assert_eq!(
+            source_basename(r"\\?\C:\media\interview.mov"),
+            "interview.mov"
+        );
+    }
+
+    #[test]
+    fn source_basename_posix_path() {
+        assert_eq!(
+            source_basename("/home/user/media/interview.mov"),
+            "interview.mov"
+        );
+    }
+
+    #[test]
+    fn source_basename_mixed_separators() {
+        assert_eq!(
+            source_basename(r"C:\media/subdir/interview.mov"),
+            "interview.mov"
+        );
+    }
+
+    #[test]
+    fn source_basename_bare_filename() {
+        assert_eq!(source_basename("interview.mov"), "interview.mov");
+    }
+
+    #[test]
+    fn source_basename_is_identical_on_every_host() {
+        // This is the property the golden test relies on: the string is
+        // produced by pure parsing, not by `std::path::Path`.
+        let cases = [
+            (r"C:\media\interview.mov", "interview.mov"),
+            (r"\\?\C:\media\interview.mov", "interview.mov"),
+            ("/home/user/media/interview.mov", "interview.mov"),
+            (r"C:\media/a.mp4", "a.mp4"),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(source_basename(input), expected, "input = {input:?}");
+        }
+    }
+
+    #[test]
     fn encode_path_url_strips_prefix() {
         assert_eq!(
             encode_path_url(r"\\?\C:\Users\me\a b.mp4"),
@@ -919,9 +1051,42 @@ mod tests {
     }
 
     #[test]
+    fn encode_path_url_handles_posix_absolute_path() {
+        assert_eq!(
+            encode_path_url("/home/user/a b.mp4"),
+            "file://localhost/home/user/a%20b.mp4"
+        );
+    }
+
+    #[test]
+    fn encode_path_url_posix_has_no_double_slash() {
+        let url = encode_path_url("/home/user/media/interview.mov");
+        assert!(!url.contains("//localhost//"), "{url}");
+        assert_eq!(url, "file://localhost/home/user/media/interview.mov");
+    }
+
+    #[test]
+    fn encode_path_url_windows_and_posix_are_shape_identical() {
+        // A Windows drive path and a POSIX path both reach `file://localhost/…`
+        // with exactly one slash after the host.
+        let win = encode_path_url(r"C:\media\a.mp4");
+        let posix = encode_path_url("/home/user/a.mp4");
+        assert!(win.starts_with("file://localhost/"), "{win}");
+        assert!(posix.starts_with("file://localhost/"), "{posix}");
+        assert!(!win.starts_with("file://localhost//"), "{win}");
+        assert!(!posix.starts_with("file://localhost//"), "{posix}");
+    }
+
+    #[test]
     fn encode_path_url_no_percent_3f() {
         let url = encode_path_url(r"\\?\C:\media\speech1.mp4");
         assert!(!url.contains("%3f"), "{url}");
+    }
+
+    #[test]
+    fn encode_path_url_never_contains_verbatim_prefix() {
+        let url = encode_path_url(r"\\?\C:\media\speech1.mp4");
+        assert!(!url.contains(r"\\?\"), "{url}");
     }
 
     #[test]
@@ -952,6 +1117,19 @@ mod tests {
         let refs = xml.matches("<file id=\"file-1\"/>").count();
         assert_eq!(full, 1, "exactly one full definition: {xml}");
         assert_eq!(refs, 1, "later clipitem references the file: {xml}");
+    }
+
+    #[test]
+    fn file_name_element_is_basename_not_full_path() {
+        // Regression: `Path::file_name()` produced different output on
+        // Windows and Linux, which broke the golden test on CI.
+        let tl = tl_audio_only();
+        let xml = write_xmeml(&tl, "T", XmlProfile::Full, &sources_for()).unwrap();
+        assert!(xml.contains("<name>speech1.mp4</name>"), "{xml}");
+        assert!(
+            !xml.contains(r"<name>C:\media\speech1.mp4</name>"),
+            "full path leaked into <name>: {xml}"
+        );
     }
 
     #[test]

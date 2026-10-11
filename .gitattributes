@@ -2,3 +2,41 @@
 *.xml text eol=lf
 *.edl text eol=lf
 *.json text eol=lf
+# .gitattributes
+#
+# Normalize line endings on every platform. Text files are stored in the
+# repository with LF and checked out with LF, so `golden.xml` and
+# `golden.edl` compare byte-for-byte on Windows, Linux and macOS.
+#
+# Without this, Git's `core.autocrlf=true` on Windows checks fixtures out
+# with CRLF, the writer emits LF, and `xmeml_matches_golden` fails for a
+# reason that has nothing to do with the code under test.
+
+* text=auto eol=lf
+
+# Explicit per-extension rules. These match the default above; listing them
+# documents the intent and survives a future change to the default.
+*.rs    text eol=lf
+*.toml  text eol=lf
+*.json  text eol=lf
+*.xml   text eol=lf
+*.edl   text eol=lf
+*.ps1   text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Lockfile: keep as text, LF, so diffs are useful.
+Cargo.lock text eol=lf
+
+# Binary fixtures and models stay untouched by Git's text machinery.
+*.wav  binary
+*.mp4  binary
+*.bin  binary
+*.onnx binary
+
+# Golden fixtures. Called out by path because they are the files that made
+# CI red; a future change to the default `*` rule cannot regress them.
+svaraflow-core/tests/fixtures/golden.xml text eol=lf
+svaraflow-core/tests/fixtures/golden.edl text eol=lf
