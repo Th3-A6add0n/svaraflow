@@ -114,9 +114,7 @@ fn run(args: &Args) -> Result<serde_json::Value> {
     // `--model`, `--model-name` and `--audio` are `Option` because
     // `--system-info` does not need them. clap's
     // `required_unless_present = "system_info"` already rejects a
-    // benchmark run that omits them, so `expect` here is unreachable for
-    // any argv that clap accepted. Reaching it would be a bug in the
-    // clap attributes, and the message says so.
+    // benchmark run that omits them.
     let model = args
         .model
         .as_ref()
@@ -231,6 +229,17 @@ fn run(args: &Args) -> Result<serde_json::Value> {
         .transcribe_with_timings(&audio, &mut progress, &cancel, &mut timings)
         .map_err(|e| anyhow!("transcription failed: {e}"))?;
     let wall_transcribe_s = transcribe_start.elapsed().as_secs_f64();
+
+    // Deliberately do not drop the Engine. On Windows with the CUDA
+    // backend, the teardown path triggered by `WhisperContext::drop` ->
+    // `whisper_free` -> CUDA driver cleanup aborts the process with
+    // `STATUS_STACK_BUFFER_OVERRUN` (exit code 0xC0000409) whenever the
+    // process was launched without a console and with redirected
+    // stdout/stderr, which is exactly how `tools/bench-asr.ps1` runs it.
+    // The work is already done and the JSON is already in memory; leaking
+    // the CUDA context costs nothing because the OS reclaims it at process
+    // exit. See docs/PERF.md.
+    std::mem::forget(engine);
 
     // 5. WER and word offset.
     let wer = if let Some(p) = &args.reference {

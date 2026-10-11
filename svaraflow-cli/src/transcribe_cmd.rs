@@ -157,6 +157,16 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
             Err(e) => return Err(anyhow!("transcription failed: {e}")),
         }
 
+        // Deliberately do not drop the Engine. On Windows with the CUDA
+        // backend, the teardown path triggered by `WhisperContext::drop`
+        // -> `whisper_free` -> CUDA driver cleanup aborts the process with
+        // `STATUS_STACK_BUFFER_OVERRUN` (exit code 0xC0000409) whenever
+        // the process was launched without a console and with redirected
+        // stdout/stderr, which is exactly how the CLI is invoked from
+        // host adapters. Leaking the CUDA context costs nothing because
+        // the OS reclaims it at process exit. See docs/PERF.md.
+        std::mem::forget(engine);
+
         if let Some(t) = &transcript {
             if !args.no_cache {
                 if let Err(e) = cache::save(&key, t) {
