@@ -28,7 +28,9 @@ pub use vad::{
     DEFAULT_MIN_SILENCE_S, DEFAULT_MIN_SPEECH_S, DEFAULT_PROB_THRESHOLD, DEFAULT_SNAP_RADIUS_S,
     DEFAULT_SPEECH_PAD_S, VAD_SAMPLE_RATE, VAD_WINDOW_SAMPLES,
 };
-pub use xmeml::{encode_path_url, write_xmeml, SourceInfo, XmlProfile, SEQUENCE_SUFFIX, XMEML_VERSION};
+pub use xmeml::{
+    encode_path_url, write_xmeml, SourceInfo, XmlProfile, SEQUENCE_SUFFIX, XMEML_VERSION,
+};
 
 /// Returns the semver version of this crate as declared by Cargo.
 #[must_use]

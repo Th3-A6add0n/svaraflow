@@ -31,8 +31,7 @@ pub fn write_wav(path: &Path, samples: &[f32], sample_rate: u32) -> std::io::Res
 
     let byte_rate = sample_rate * u32::from(CHANNELS) * u32::from(BITS_PER_SAMPLE) / 8;
     let block_align = CHANNELS * BITS_PER_SAMPLE / 8;
-    let data_size =
-        (samples.len() as u32) * u32::from(CHANNELS) * u32::from(BITS_PER_SAMPLE) / 8;
+    let data_size = (samples.len() as u32) * u32::from(CHANNELS) * u32::from(BITS_PER_SAMPLE) / 8;
     let riff_size = 36 + data_size;
 
     let mut file = std::fs::File::create(path)?;

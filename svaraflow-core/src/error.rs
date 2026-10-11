@@ -11,7 +11,6 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum CoreError {
     // --- timeline ---------------------------------------------------------
-
     /// Frame rate numerator or denominator was zero.
     #[error("invalid fps: numerator and denominator must be positive")]
     InvalidFps,
@@ -53,7 +52,6 @@ pub enum CoreError {
     InvalidTimeline(String),
 
     // --- io / json --------------------------------------------------------
-
     /// Underlying I/O failure (files, pipes, stdin, stdout).
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
@@ -63,7 +61,6 @@ pub enum CoreError {
     Json(#[from] serde_json::Error),
 
     // --- audio ------------------------------------------------------------
-
     /// A clip's audio could not be decoded by any available backend.
     ///
     /// `id` always names the clip from `timeline.json`, so the CLI can report
@@ -96,7 +93,6 @@ pub enum CoreError {
     Mixdown(String),
 
     // --- vad --------------------------------------------------------------
-
     /// The VAD engine failed during model loading or inference.
     ///
     /// The payload is a free-form message from the concrete engine
@@ -107,7 +103,6 @@ pub enum CoreError {
     VadFailed(String),
 
     // --- scaffold ---------------------------------------------------------
-
     /// Feature not yet implemented.
     #[error("not yet implemented: {0}")]
     NotImplemented(&'static str),

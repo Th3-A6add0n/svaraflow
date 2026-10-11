@@ -303,8 +303,10 @@ mod tests {
     fn render_a_single_track_is_not_attenuated() {
         let tl = timeline(at_30fps(), vec![audio_track(1, vec![clip("a", 0, 30)])]);
         let tracks = select_tracks(&tl, None);
-        let mut decoder = FakeDecoder::new(16_000)
-            .with("a", MonoAudio::new(vec![0.75; 16_000], ANALYSIS_SAMPLE_RATE));
+        let mut decoder = FakeDecoder::new(16_000).with(
+            "a",
+            MonoAudio::new(vec![0.75; 16_000], ANALYSIS_SAMPLE_RATE),
+        );
 
         let mixed = render_analysis_signal(&tl, &tracks, &mut decoder).unwrap();
         assert!(mixed.samples.iter().all(|s| (*s - 0.75).abs() < 1e-6));
@@ -333,8 +335,10 @@ mod tests {
             )],
         );
         let tracks = select_tracks(&tl, None);
-        let mut decoder = FakeDecoder::new(16_000)
-            .with("short", MonoAudio::new(vec![1.0; 16_000], ANALYSIS_SAMPLE_RATE));
+        let mut decoder = FakeDecoder::new(16_000).with(
+            "short",
+            MonoAudio::new(vec![1.0; 16_000], ANALYSIS_SAMPLE_RATE),
+        );
 
         let mixed = render_analysis_signal(&tl, &tracks, &mut decoder).unwrap();
         // Signal runs to frame 130 = sample 69 333.

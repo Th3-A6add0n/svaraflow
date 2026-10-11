@@ -22,10 +22,13 @@ cuda = ["svaraflow-asr/cuda"]
 name = "svaraflow-cli"
 path = "src/main.rs"
 
+[[bin]]
+name = "bench-asr"
+path = "src/bin/bench_asr.rs"
+
 [dependencies]
 svaraflow-core.workspace = true
 svaraflow-asr.workspace = true
-
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

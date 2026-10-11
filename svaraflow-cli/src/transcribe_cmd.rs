@@ -9,8 +9,8 @@ use svaraflow_asr::{
     transcribe::{DecodeStrategy, Engine, LanguageHint, TranscribeConfig},
     AsrError, Manifest, ModelEntry, Tier,
 };
-use svaraflow_core::audio::{decode_native_mono, decode_via_ffmpeg, resample_to, MonoAudio};
 use svaraflow_core::audio::ANALYSIS_SAMPLE_RATE;
+use svaraflow_core::audio::{decode_native_mono, decode_via_ffmpeg, resample_to, MonoAudio};
 
 use crate::cli::{
     ModelsCli, ModelsCommand, ModelsDownloadArgs, ModelsHashArgs, ModelsRemoveArgs, TierArg,
@@ -84,12 +84,16 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
         repetition_guard: true,
         max_chunk_s: svaraflow_asr::DEFAULT_MAX_CHUNK_S,
         overlap_s: svaraflow_asr::DEFAULT_OVERLAP_S,
+        // Use every logical core. Overridable through `bench-asr`; the
+        // interactive CLI does not expose a flag for it.
+        threads: 0,
     };
     if cfg.use_dtw {
         eprintln!("using token-level DTW timestamps");
     } else {
         eprintln!("DTW disabled; word timing will be proportional and flagged as estimated");
     }
+    eprintln!("decoder threads: {}", cfg.resolved_threads());
 
     let key = cache::key_for(&audio, &entry.name, &cfg);
     let mut transcript = if args.no_cache {

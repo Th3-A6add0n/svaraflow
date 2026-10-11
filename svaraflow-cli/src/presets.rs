@@ -164,7 +164,9 @@ pub fn save_user(name: &str, values: PresetValues) -> Result<()> {
 /// Renames a user preset. Refuses built-ins on either side.
 pub fn rename_user(old: &str, new: &str) -> Result<()> {
     if is_builtin(old) {
-        return Err(anyhow!("`{old}` is a built-in preset and cannot be renamed"));
+        return Err(anyhow!(
+            "`{old}` is a built-in preset and cannot be renamed"
+        ));
     }
     if is_builtin(new) {
         return Err(anyhow!(
@@ -186,7 +188,9 @@ pub fn rename_user(old: &str, new: &str) -> Result<()> {
 /// Deletes a user preset. Refuses built-ins.
 pub fn delete_user(name: &str) -> Result<()> {
     if is_builtin(name) {
-        return Err(anyhow!("`{name}` is a built-in preset and cannot be deleted"));
+        return Err(anyhow!(
+            "`{name}` is a built-in preset and cannot be deleted"
+        ));
     }
     let mut file = load()?;
     if file.presets.remove(name).is_none() {

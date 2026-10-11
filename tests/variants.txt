@@ -1,0 +1,7 @@
+# tests/variants.txt
+# Spelling variants for Hinglish WER normalisation.
+# Format: variant=canonical (one pair per line, `#` starts a comment).
+nahi=nahin
+haan=han
+kya=kyaa
+yeh=ye

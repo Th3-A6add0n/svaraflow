@@ -526,8 +526,7 @@ mod tests {
 
     #[test]
     fn parses_models_hash() {
-        let cli =
-            Cli::try_parse_from(["svaraflow-cli", "models", "hash", "m.bin"]).expect("parse");
+        let cli = Cli::try_parse_from(["svaraflow-cli", "models", "hash", "m.bin"]).expect("parse");
         let Command::Models(m) = cli.command else {
             panic!();
         };
@@ -539,8 +538,8 @@ mod tests {
 
     #[test]
     fn parses_models_remove() {
-        let cli = Cli::try_parse_from(["svaraflow-cli", "models", "remove", "light"])
-            .expect("parse");
+        let cli =
+            Cli::try_parse_from(["svaraflow-cli", "models", "remove", "light"]).expect("parse");
         let Command::Models(m) = cli.command else {
             panic!();
         };

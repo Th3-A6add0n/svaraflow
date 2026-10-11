@@ -620,12 +620,7 @@ mod tests {
             vec![FrameRange::new(100, 200)],
             300,
         );
-        for mode in [
-            CutMode::Remove,
-            CutMode::Keep,
-            CutMode::Mute,
-            CutMode::Gaps,
-        ] {
+        for mode in [CutMode::Remove, CutMode::Keep, CutMode::Mute, CutMode::Gaps] {
             let result = apply_cuts(&tl, &r, mode, None);
             assert!(
                 result.timeline.validate().is_ok(),
@@ -643,12 +638,7 @@ mod tests {
             vec![FrameRange::new(100, 200)],
             300,
         );
-        for mode in [
-            CutMode::Remove,
-            CutMode::Keep,
-            CutMode::Mute,
-            CutMode::Gaps,
-        ] {
+        for mode in [CutMode::Remove, CutMode::Keep, CutMode::Mute, CutMode::Gaps] {
             let _ = apply_cuts(&tl, &r, mode, None);
         }
         assert_eq!(tl, snapshot);
@@ -680,12 +670,7 @@ mod tests {
     fn full_keep_range_is_identity_in_every_mode() {
         let tl = timeline(vec![audio_track(1, vec![clip("a", 0, 0, 300)])]);
         let r = ranges(vec![FrameRange::new(0, 300)], vec![], 300);
-        for mode in [
-            CutMode::Remove,
-            CutMode::Keep,
-            CutMode::Mute,
-            CutMode::Gaps,
-        ] {
+        for mode in [CutMode::Remove, CutMode::Keep, CutMode::Mute, CutMode::Gaps] {
             let result = apply_cuts(&tl, &r, mode, None);
             let clips = &result.timeline.tracks[0].clips;
             assert_eq!(clips.len(), 1, "{mode:?}");

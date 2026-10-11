@@ -6,7 +6,6 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum AsrError {
     // --- model management -------------------------------------------------
-
     /// The model manifest could not be parsed.
     #[error("model manifest: {0}")]
     Manifest(String),
@@ -61,7 +60,6 @@ pub enum AsrError {
     ModelFolder(String),
 
     // --- engine -----------------------------------------------------------
-
     /// The VAD model file could not be found or read.
     #[error("vad model {path}: {reason}")]
     VadModelIo {
@@ -131,7 +129,6 @@ pub enum AsrError {
     Cancelled,
 
     // --- cross-crate ------------------------------------------------------
-
     /// An error from `svaraflow-core`.
     ///
     /// Most commonly raised by the VAD trait, whose
@@ -140,7 +137,6 @@ pub enum AsrError {
     Core(#[from] svaraflow_core::error::CoreError),
 
     // --- io ---------------------------------------------------------------
-
     /// Underlying I/O failure.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),

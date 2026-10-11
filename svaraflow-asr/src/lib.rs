@@ -31,8 +31,8 @@ pub use cache::{CacheKey, CachedTranscript};
 pub use error::AsrError;
 pub use exports::{ass_time, srt_time, vtt_time, write_ass, write_json, write_srt, write_vtt};
 pub use models::{
-    ensure_model, ensure_storage_dir, hash_file, path_for, storage_dir, Manifest, ModelEntry, Tier,
-    ProgressFn, TODO_SENTINEL,
+    ensure_model, ensure_storage_dir, hash_file, path_for, storage_dir, Manifest, ModelEntry,
+    ProgressFn, Tier, TODO_SENTINEL,
 };
 pub use transcribe::{
     Chunk, DecodeStrategy, Engine, LanguageHint, Segment, TranscribeConfig, TranscribeProgressFn,

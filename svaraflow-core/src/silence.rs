@@ -689,8 +689,7 @@ fn finish_pipeline(
     let keep_talks_frames = ms_to_env_frames(params.keep_talks_ms, seconds_per_env_frame);
     runs = flip_and_merge(&runs, true, keep_talks_frames);
 
-    let remove_silences_frames =
-        ms_to_env_frames(params.remove_silences_ms, seconds_per_env_frame);
+    let remove_silences_frames = ms_to_env_frames(params.remove_silences_ms, seconds_per_env_frame);
     runs = flip_and_merge(&runs, false, remove_silences_frames);
 
     let sound_env: Vec<FrameRange> = runs
@@ -706,8 +705,7 @@ fn finish_pipeline(
 
     let silences_found = complement(&sound_env, total_env_frames).len();
 
-    let min_between_frames =
-        ms_to_env_frames(params.min_between_cuts_ms, seconds_per_env_frame);
+    let min_between_frames = ms_to_env_frames(params.min_between_cuts_ms, seconds_per_env_frame);
     let (sound_env, cuts_prevented) =
         apply_min_between_cuts(&sound_env, total_env_frames, min_between_frames);
 
@@ -837,11 +835,7 @@ fn mask_to_runs(mask: &[bool]) -> Vec<(bool, i64, i64)> {
     runs
 }
 
-fn flip_and_merge(
-    runs: &[(bool, i64, i64)],
-    target: bool,
-    min_len: i64,
-) -> Vec<(bool, i64, i64)> {
+fn flip_and_merge(runs: &[(bool, i64, i64)], target: bool, min_len: i64) -> Vec<(bool, i64, i64)> {
     let mut out: Vec<(bool, i64, i64)> = Vec::with_capacity(runs.len());
     for &(value, start, end) in runs {
         let flipped = if value == target && (end - start) < min_len {

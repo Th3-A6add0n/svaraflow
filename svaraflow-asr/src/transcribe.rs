@@ -12,6 +12,15 @@
 //!    [`SNAP_RADIUS_S`].
 //! 5. Applies a repetition guard: consecutive repeated n-grams are dropped.
 //!
+//! # Thread count
+//!
+//! whisper.cpp's compiled-in default for `n_threads` is
+//! `min(4, hardware_concurrency)`. On most modern CPUs that leaves the
+//! majority of cores idle. [`TranscribeConfig::threads`] overrides it:
+//! `0` means "use every logical core the process can see", any other
+//! value is passed through unchanged. [`Engine::transcribe_chunk`] applies
+//! it on every `FullParams`.
+//!
 //! # Whisper state
 //!
 //! One `WhisperState` is created per `transcribe` call and reused across
@@ -138,6 +147,17 @@ pub struct TranscribeConfig {
     pub max_chunk_s: f64,
     /// Overlap on each side of every chunk.
     pub overlap_s: f64,
+    /// Number of CPU threads for the decoder.
+    ///
+    /// `0` means "use every logical core the process can see", which is
+    /// what [`Engine::transcribe_chunk`] resolves via
+    /// `std::thread::available_parallelism`. Any other value is passed to
+    /// whisper.cpp unchanged.
+    ///
+    /// This exists because whisper.cpp's compiled-in default is
+    /// `min(4, hardware_concurrency)`, which leaves most modern CPUs
+    /// mostly idle — a 24-thread machine runs at roughly 17% CPU.
+    pub threads: usize,
 }
 
 impl Default for TranscribeConfig {
@@ -154,6 +174,7 @@ impl Default for TranscribeConfig {
             repetition_guard: true,
             max_chunk_s: DEFAULT_MAX_CHUNK_S,
             overlap_s: DEFAULT_OVERLAP_S,
+            threads: 0,
         }
     }
 }
@@ -170,6 +191,21 @@ impl TranscribeConfig {
         }
         let joined = self.vocabulary.join(", ");
         Some(format!("Vocabulary: {joined}."))
+    }
+
+    /// Resolves [`Self::threads`] into a concrete `i32` for whisper.cpp.
+    ///
+    /// `0` means "all logical cores". Any non-zero value is passed through.
+    /// A machine that reports nothing usable falls back to `4`, matching
+    /// whisper.cpp's own compiled-in default.
+    #[must_use]
+    pub fn resolved_threads(&self) -> i32 {
+        if self.threads > 0 {
+            return self.threads.min(i32::MAX as usize) as i32;
+        }
+        std::thread::available_parallelism()
+            .map(|n| n.get() as i32)
+            .unwrap_or(4)
     }
 }
 
@@ -420,6 +456,11 @@ impl Engine {
             },
         };
         let mut params = FullParams::new(strategy);
+
+        // whisper.cpp's compiled-in default caps `n_threads` at
+        // `min(4, hardware_concurrency)`. On a modern many-core CPU that
+        // leaves most of the machine idle, so always set it explicitly.
+        params.set_n_threads(self.config.resolved_threads());
 
         params.set_language(self.config.language.as_whisper_str());
         params.set_print_special(false);
@@ -886,6 +927,27 @@ mod tests {
     }
 
     #[test]
+    fn default_config_uses_all_cores() {
+        let cfg = TranscribeConfig::default();
+        assert_eq!(cfg.threads, 0);
+        let n = cfg.resolved_threads();
+        let expected = std::thread::available_parallelism()
+            .map(|n| n.get() as i32)
+            .unwrap_or(4);
+        assert_eq!(n, expected);
+        assert!(n >= 1);
+    }
+
+    #[test]
+    fn resolved_threads_honours_explicit_value() {
+        let cfg = TranscribeConfig {
+            threads: 3,
+            ..TranscribeConfig::default()
+        };
+        assert_eq!(cfg.resolved_threads(), 3);
+    }
+
+    #[test]
     fn effective_prompt_from_vocabulary() {
         let cfg = TranscribeConfig {
             vocabulary: vec!["SvaraFlow".into(), "Th3 A6add0n".into()],
@@ -1036,5 +1098,6 @@ mod tests {
         assert_eq!(c.overlap_s, 0.3);
         assert!(c.temperature_fallback);
         assert!(c.repetition_guard);
+        assert_eq!(c.threads, 0);
     }
 }

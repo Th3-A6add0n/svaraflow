@@ -118,14 +118,14 @@ pub fn resample_to(input: &MonoAudio, target_rate: u32) -> Result<MonoAudio, Cor
     const SUB_CHUNKS: usize = 2;
     const CHANNELS: usize = 1;
 
-    let mut resampler =
-        rubato::FftFixedIn::<f32>::new(fs_in, fs_out, CHUNK_OUT, SUB_CHUNKS, CHANNELS).map_err(
-            |e| CoreError::Resample {
-                from_hz: input.sample_rate,
-                to_hz: target_rate,
-                reason: e.to_string(),
-            },
-        )?;
+    let mut resampler = rubato::FftFixedIn::<f32>::new(
+        fs_in, fs_out, CHUNK_OUT, SUB_CHUNKS, CHANNELS,
+    )
+    .map_err(|e| CoreError::Resample {
+        from_hz: input.sample_rate,
+        to_hz: target_rate,
+        reason: e.to_string(),
+    })?;
 
     let expected_out =
         ((input.samples.len() as f64) * (fs_out as f64) / (fs_in as f64)).round() as usize;
@@ -144,13 +144,14 @@ pub fn resample_to(input: &MonoAudio, target_rate: u32) -> Result<MonoAudio, Cor
         for sample in &mut waves_in[0][take..] {
             *sample = 0.0;
         }
-        let waves_out = rubato::Resampler::process(&mut resampler, &waves_in, None).map_err(|e| {
-            CoreError::Resample {
-                from_hz: input.sample_rate,
-                to_hz: target_rate,
-                reason: e.to_string(),
-            }
-        })?;
+        let waves_out =
+            rubato::Resampler::process(&mut resampler, &waves_in, None).map_err(|e| {
+                CoreError::Resample {
+                    from_hz: input.sample_rate,
+                    to_hz: target_rate,
+                    reason: e.to_string(),
+                }
+            })?;
         out.extend_from_slice(&waves_out[0]);
         pos += take;
     }

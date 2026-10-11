@@ -124,8 +124,8 @@ impl Manifest {
     /// [`AsrError::Manifest`] when the JSON is malformed or the version is
     /// not `1`.
     pub fn load_embedded() -> Result<Self, AsrError> {
-        let m: Manifest = serde_json::from_str(MANIFEST_JSON)
-            .map_err(|e| AsrError::Manifest(e.to_string()))?;
+        let m: Manifest =
+            serde_json::from_str(MANIFEST_JSON).map_err(|e| AsrError::Manifest(e.to_string()))?;
         if m.version != 1 {
             return Err(AsrError::Manifest(format!(
                 "unsupported manifest version {}; this build reads version 1",
@@ -462,12 +462,49 @@ mod tests {
         assert_eq!(e.quantization, "q5_0");
     }
 
+    /// Every manifest entry's `sha256` is either the `TODO` sentinel, empty,
+    /// or a 64-character lowercase hex string. The test no longer asserts
+    /// that *no* hash is filled in — real hashes are the intended end state
+    /// — it asserts that whatever is in the field is *well-formed*.
     #[test]
-    fn todo_hashes_are_detected() {
+    fn manifest_hashes_are_todo_or_valid_hex() {
         let m = Manifest::load_embedded().unwrap();
         for e in &m.models {
-            assert!(!e.has_real_hash(), "{} carries a real hash", e.name);
-            assert!(!e.has_real_url(), "{} carries a real url", e.name);
+            let h = e.sha256.trim();
+            if h.is_empty() || h.eq_ignore_ascii_case(TODO_SENTINEL) {
+                continue;
+            }
+            assert_eq!(
+                h.len(),
+                64,
+                "{} has a hash of length {}: {h:?}",
+                e.name,
+                h.len()
+            );
+            assert!(
+                h.chars()
+                    .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
+                "{} has a non-lowercase-hex hash: {h:?}",
+                e.name
+            );
+        }
+    }
+
+    /// Same idea for `url`: either the `TODO` sentinel, empty, or an
+    /// `http(s)://` URL.
+    #[test]
+    fn manifest_urls_are_todo_or_http() {
+        let m = Manifest::load_embedded().unwrap();
+        for e in &m.models {
+            let u = e.url.trim();
+            if u.is_empty() || u.eq_ignore_ascii_case(TODO_SENTINEL) {
+                continue;
+            }
+            assert!(
+                u.starts_with("http://") || u.starts_with("https://"),
+                "{} has a non-http url: {u:?}",
+                e.name
+            );
         }
     }
 

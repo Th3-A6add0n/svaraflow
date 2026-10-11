@@ -421,7 +421,10 @@ mod tests {
     fn timeline_validate_rejects_zero_index() {
         let mut tl = sample_timeline();
         tl.tracks[0].index = 0;
-        assert!(matches!(tl.validate(), Err(CoreError::InvalidTrackIndex(0))));
+        assert!(matches!(
+            tl.validate(),
+            Err(CoreError::InvalidTrackIndex(0))
+        ));
     }
 
     #[test]

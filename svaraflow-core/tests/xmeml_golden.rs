@@ -7,8 +7,8 @@ use svaraflow_core::silence::{
     AnalysisReport, FrameRange, NoiseSource, SilenceRanges, SilenceStats, SilenceWarning,
 };
 use svaraflow_core::timeline::{Clip, Fps, Timeline, Track, TrackKind};
-use svaraflow_core::xmeml::{write_xmeml, SourceInfo, XmlProfile};
 use svaraflow_core::write_edl;
+use svaraflow_core::xmeml::{write_xmeml, SourceInfo, XmlProfile};
 
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")

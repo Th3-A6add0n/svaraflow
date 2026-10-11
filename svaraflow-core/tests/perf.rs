@@ -47,8 +47,8 @@ fn time_analysis(total_seconds: u32) -> f64 {
     let start = Instant::now();
     let envelope = compute_envelope(&audio, EnvelopeParams::default());
     let params = SilenceParams::default();
-    let ranges = detect_silence(&envelope, &params, Fps { num: 30, den: 1 })
-        .expect("detect_silence");
+    let ranges =
+        detect_silence(&envelope, &params, Fps { num: 30, den: 1 }).expect("detect_silence");
     let elapsed = start.elapsed().as_secs_f64();
 
     assert!(!ranges.keep.is_empty(), "no keep ranges found");

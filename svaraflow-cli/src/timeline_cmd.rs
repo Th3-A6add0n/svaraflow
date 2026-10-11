@@ -378,8 +378,9 @@ pub fn parse_fps_arg(s: &str) -> Result<Fps, String> {
                 den_s.trim()
             )
         })?;
-        return Fps::new(num, den)
-            .map_err(|_| format!("--fps fraction {num}/{den} is invalid (both parts must be > 0)"));
+        return Fps::new(num, den).map_err(|_| {
+            format!("--fps fraction {num}/{den} is invalid (both parts must be > 0)")
+        });
     }
 
     match s {
@@ -726,7 +727,9 @@ mod tests {
         let args = args_with("30000/1001", 1920, 1080);
         let fps = parse_fps_arg(&args.fps).unwrap();
         let err = build_from_probe(&probe, TEST_SOURCE, &args, fps).unwrap_err();
-        assert!(err.to_string().contains("no video stream and no audio stream"));
+        assert!(err
+            .to_string()
+            .contains("no video stream and no audio stream"));
     }
 
     #[test]

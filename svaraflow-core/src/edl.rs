@@ -87,9 +87,7 @@ pub fn format_timecode(frames: i64, fps: Fps, drop_frame: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::silence::{
-        AnalysisReport, FrameRange, NoiseSource, SilenceStats, SilenceWarning,
-    };
+    use crate::silence::{AnalysisReport, FrameRange, NoiseSource, SilenceStats, SilenceWarning};
     use crate::timeline::{Clip, Fps, Track, TrackKind};
 
     fn timeline_30() -> Timeline {
@@ -165,7 +163,14 @@ mod tests {
     #[test]
     fn timecode_drop_frame_uses_semicolon() {
         assert_eq!(
-            format_timecode(30, Fps { num: 30_000, den: 1001 }, true),
+            format_timecode(
+                30,
+                Fps {
+                    num: 30_000,
+                    den: 1001
+                },
+                true
+            ),
             "00:00:01;00"
         );
     }

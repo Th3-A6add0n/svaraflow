@@ -72,11 +72,7 @@ pub fn hash_settings(model: &str, cfg: &TranscribeConfig) -> String {
         DecodeStrategy::Greedy => "greedy".to_string(),
         DecodeStrategy::BeamSearch { beam_size } => format!("beam:{beam_size}"),
     };
-    let language = cfg
-        .language
-        .as_whisper_str()
-        .unwrap_or("auto")
-        .to_string();
+    let language = cfg.language.as_whisper_str().unwrap_or("auto").to_string();
 
     let payload = serde_json::json!({
         "v": CACHE_VERSION,

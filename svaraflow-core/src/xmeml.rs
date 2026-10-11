@@ -176,7 +176,9 @@ pub fn write_xmeml(
     writer.write_event(Event::Start(root)).map_err(io_err)?;
 
     match profile {
-        XmlProfile::Minimal => write_sequence_minimal(&mut writer, timeline, original_name, sources)?,
+        XmlProfile::Minimal => {
+            write_sequence_minimal(&mut writer, timeline, original_name, sources)?
+        }
         XmlProfile::Cuts => write_sequence_cuts(&mut writer, timeline, original_name, sources)?,
         XmlProfile::Full => write_sequence_full(&mut writer, timeline, original_name, sources)?,
     }
@@ -209,11 +211,7 @@ fn write_sequence_full(
 
     write_element(writer, "uuid", &make_uuid(original_name))?;
     write_element(writer, "name", &format!("{original_name}{SEQUENCE_SUFFIX}"))?;
-    write_element(
-        writer,
-        "duration",
-        &timeline.duration_frames().to_string(),
-    )?;
+    write_element(writer, "duration", &timeline.duration_frames().to_string())?;
     write_rate(writer, timeline.fps)?;
     write_timecode(writer, timeline.fps)?;
 
@@ -238,11 +236,7 @@ fn write_sequence_cuts(
         .map_err(io_err)?;
 
     write_element(writer, "name", &format!("{original_name}{SEQUENCE_SUFFIX}"))?;
-    write_element(
-        writer,
-        "duration",
-        &timeline.duration_frames().to_string(),
-    )?;
+    write_element(writer, "duration", &timeline.duration_frames().to_string())?;
     write_rate(writer, timeline.fps)?;
 
     let clips = build_xml_clips(timeline, sources);
@@ -266,11 +260,7 @@ fn write_sequence_minimal(
         .map_err(io_err)?;
 
     write_element(writer, "name", &format!("{original_name}{SEQUENCE_SUFFIX}"))?;
-    write_element(
-        writer,
-        "duration",
-        &timeline.duration_frames().to_string(),
-    )?;
+    write_element(writer, "duration", &timeline.duration_frames().to_string())?;
     write_rate(writer, timeline.fps)?;
 
     let all = build_xml_clips(timeline, sources);
@@ -718,11 +708,7 @@ fn write_rate(writer: &mut Writer<Vec<u8>>, fps: Fps) -> Result<(), CoreError> {
     writer
         .write_event(Event::Start(BytesStart::new("rate")))
         .map_err(io_err)?;
-    write_element(
-        writer,
-        "ntsc",
-        if fps.is_ntsc() { "TRUE" } else { "FALSE" },
-    )?;
+    write_element(writer, "ntsc", if fps.is_ntsc() { "TRUE" } else { "FALSE" })?;
     write_element(writer, "timebase", &fps.integer_rate().to_string())?;
     writer
         .write_event(Event::End(BytesEnd::new("rate")))
