@@ -1,0 +1,5243 @@
+real-time factor: 55.69x (180.00 s audio in 3.23 s)
+{
+  "version": 1,
+  "model": "Whisper-Hindi2Hinglish-Swift",
+  "tier": "light",
+  "language": "hi",
+  "audio_duration_s": 179.9981875,
+  "elapsed_s": 3.2324149,
+  "real_time_factor": 55.68536003840348,
+  "segments": [
+    {
+      "text": "Then usually cautious in opening the door. A watches minute hand moves more quickly than did mine. Never before that night had I felt the extent of my own powers of my sagacity. I could scarcely contain my feelings of triumph to think that there I was opening the door, little by little and",
+      "start_s": 0.005,
+      "end_s": 30.0525,
+      "words": [
+        {
+          "text": "[_BEG_]Then",
+          "start_s": 0.005,
+          "end_s": 0.9426875,
+          "probability": 0.44211447,
+          "estimated": true
+        },
+        {
+          "text": "usually",
+          "start_s": 0.9426875,
+          "end_s": 1.3940625,
+          "probability": 0.9881235,
+          "estimated": true
+        },
+        {
+          "text": "cautious",
+          "start_s": 1.3940625,
+          "end_s": 1.8954375,
+          "probability": 0.9971117,
+          "estimated": true
+        },
+        {
+          "text": "in",
+          "start_s": 1.8954375,
+          "end_s": 2.4743125,
+          "probability": 0.9770493,
+          "estimated": true
+        },
+        {
+          "text": "opening",
+          "start_s": 2.4743125,
+          "end_s": 2.9606875,
+          "probability": 0.9910963,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 2.9606875,
+          "end_s": 3.3745625,
+          "probability": 0.9998207,
+          "estimated": true
+        },
+        {
+          "text": "door.",
+          "start_s": 3.3745625,
+          "end_s": 4.3198125,
+          "probability": 0.79568654,
+          "estimated": true
+        },
+        {
+          "text": "A",
+          "start_s": 4.3198125,
+          "end_s": 4.8811875,
+          "probability": 0.9422349,
+          "estimated": true
+        },
+        {
+          "text": "watches",
+          "start_s": 4.8811875,
+          "end_s": 5.3750625,
+          "probability": 0.8108448,
+          "estimated": true
+        },
+        {
+          "text": "minute",
+          "start_s": 5.3750625,
+          "end_s": 5.8339375,
+          "probability": 0.9877334,
+          "estimated": true
+        },
+        {
+          "text": "hand",
+          "start_s": 5.8339375,
+          "end_s": 6.2653125,
+          "probability": 0.9399866,
+          "estimated": true
+        },
+        {
+          "text": "moves",
+          "start_s": 6.2653125,
+          "end_s": 6.8091875,
+          "probability": 0.9669012,
+          "estimated": true
+        },
+        {
+          "text": "more",
+          "start_s": 6.8091875,
+          "end_s": 7.2355625,
+          "probability": 0.9956227,
+          "estimated": true
+        },
+        {
+          "text": "quickly",
+          "start_s": 7.2355625,
+          "end_s": 7.776875,
+          "probability": 0.99281996,
+          "estimated": true
+        },
+        {
+          "text": "than",
+          "start_s": 7.776875,
+          "end_s": 8.20075,
+          "probability": 0.96112216,
+          "estimated": true
+        },
+        {
+          "text": "did",
+          "start_s": 8.20075,
+          "end_s": 8.707125,
+          "probability": 0.77489054,
+          "estimated": true
+        },
+        {
+          "text": "mine.",
+          "start_s": 8.707125,
+          "end_s": 9.714875,
+          "probability": 0.9068672,
+          "estimated": true
+        },
+        {
+          "text": "Never",
+          "start_s": 9.714875,
+          "end_s": 10.21875,
+          "probability": 0.8071569,
+          "estimated": true
+        },
+        {
+          "text": "before",
+          "start_s": 10.21875,
+          "end_s": 10.700125,
+          "probability": 0.9991973,
+          "estimated": true
+        },
+        {
+          "text": "that",
+          "start_s": 10.700125,
+          "end_s": 11.179,
+          "probability": 0.9932973,
+          "estimated": true
+        },
+        {
+          "text": "night",
+          "start_s": 11.179,
+          "end_s": 11.667875,
+          "probability": 0.99206275,
+          "estimated": true
+        },
+        {
+          "text": "had",
+          "start_s": 11.667875,
+          "end_s": 12.14675,
+          "probability": 0.90680146,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 12.14675,
+          "end_s": 12.548125,
+          "probability": 0.994575,
+          "estimated": true
+        },
+        {
+          "text": "felt",
+          "start_s": 12.548125,
+          "end_s": 13.012,
+          "probability": 0.9760044,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 13.012,
+          "end_s": 13.573375,
+          "probability": 0.9991306,
+          "estimated": true
+        },
+        {
+          "text": "extent",
+          "start_s": 13.573375,
+          "end_s": 13.97975,
+          "probability": 0.9760286,
+          "estimated": true
+        },
+        {
+          "text": "of",
+          "start_s": 13.97975,
+          "end_s": 14.573625,
+          "probability": 0.99204385,
+          "estimated": true
+        },
+        {
+          "text": "my",
+          "start_s": 14.573625,
+          "end_s": 14.9475,
+          "probability": 0.9989553,
+          "estimated": true
+        },
+        {
+          "text": "own",
+          "start_s": 14.9475,
+          "end_s": 15.4638125,
+          "probability": 0.9985248,
+          "estimated": true
+        },
+        {
+          "text": "powers",
+          "start_s": 15.4638125,
+          "end_s": 15.9651875,
+          "probability": 0.99133265,
+          "estimated": true
+        },
+        {
+          "text": "of",
+          "start_s": 15.9651875,
+          "end_s": 16.4990625,
+          "probability": 0.81299734,
+          "estimated": true
+        },
+        {
+          "text": "my",
+          "start_s": 16.4990625,
+          "end_s": 16.9804375,
+          "probability": 0.9971773,
+          "estimated": true
+        },
+        {
+          "text": "sagacity.",
+          "start_s": 16.9804375,
+          "end_s": 18.3320625,
+          "probability": 0.3061376,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 18.3320625,
+          "end_s": 18.8834375,
+          "probability": 0.99571764,
+          "estimated": true
+        },
+        {
+          "text": "could",
+          "start_s": 18.8834375,
+          "end_s": 19.3348125,
+          "probability": 0.77186215,
+          "estimated": true
+        },
+        {
+          "text": "scarcely",
+          "start_s": 19.3348125,
+          "end_s": 20.3575625,
+          "probability": 0.9802459,
+          "estimated": true
+        },
+        {
+          "text": "contain",
+          "start_s": 20.3575625,
+          "end_s": 20.8639375,
+          "probability": 0.98680127,
+          "estimated": true
+        },
+        {
+          "text": "my",
+          "start_s": 20.8639375,
+          "end_s": 21.2978125,
+          "probability": 0.9976377,
+          "estimated": true
+        },
+        {
+          "text": "feelings",
+          "start_s": 21.2978125,
+          "end_s": 21.7566875,
+          "probability": 0.9920476,
+          "estimated": true
+        },
+        {
+          "text": "of",
+          "start_s": 21.7566875,
+          "end_s": 22.2680625,
+          "probability": 0.99946606,
+          "estimated": true
+        },
+        {
+          "text": "triumph",
+          "start_s": 22.2680625,
+          "end_s": 22.799375,
+          "probability": 0.9987905,
+          "estimated": true
+        },
+        {
+          "text": "to",
+          "start_s": 22.799375,
+          "end_s": 23.16825,
+          "probability": 0.49355948,
+          "estimated": true
+        },
+        {
+          "text": "think",
+          "start_s": 23.16825,
+          "end_s": 23.764625,
+          "probability": 0.9956987,
+          "estimated": true
+        },
+        {
+          "text": "that",
+          "start_s": 23.764625,
+          "end_s": 24.236,
+          "probability": 0.9987953,
+          "estimated": true
+        },
+        {
+          "text": "there",
+          "start_s": 24.236,
+          "end_s": 24.724875,
+          "probability": 0.9901799,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 24.724875,
+          "end_s": 25.20125,
+          "probability": 0.9974436,
+          "estimated": true
+        },
+        {
+          "text": "was",
+          "start_s": 25.20125,
+          "end_s": 25.652625,
+          "probability": 0.9996949,
+          "estimated": true
+        },
+        {
+          "text": "opening",
+          "start_s": 25.652625,
+          "end_s": 26.174,
+          "probability": 0.956426,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 26.174,
+          "end_s": 26.632875,
+          "probability": 0.99945843,
+          "estimated": true
+        },
+        {
+          "text": "door,",
+          "start_s": 26.632875,
+          "end_s": 27.593125,
+          "probability": 0.5813966,
+          "estimated": true
+        },
+        {
+          "text": "little",
+          "start_s": 27.593125,
+          "end_s": 28.117,
+          "probability": 0.7731787,
+          "estimated": true
+        },
+        {
+          "text": "by",
+          "start_s": 28.117,
+          "end_s": 28.590875,
+          "probability": 0.99920875,
+          "estimated": true
+        },
+        {
+          "text": "little",
+          "start_s": 28.590875,
+          "end_s": 28.99725,
+          "probability": 0.9891078,
+          "estimated": true
+        },
+        {
+          "text": "and[_EOT_]",
+          "start_s": 28.99725,
+          "end_s": 30.0525,
+          "probability": 0.3376167,
+          "estimated": true
+        }
+      ]
+    },
+    {
+      "text": "And he not even dreaming of my secret deeds or thoughts. I have fairly chuckled at the idea and perhaps he hurt me. For he moved on the bed suddenly as if startled. Now you may think that I drew back but know his room was as black as pitch with the thick darkness for the shutters were closed fastened through fear of robbers and so I knew.",
+      "start_s": 30.0525,
+      "end_s": 59.345,
+      "words": [
+        {
+          "text": "[_BEG_]And",
+          "start_s": 30.0525,
+          "end_s": 30.1391875,
+          "probability": 0.74919826,
+          "estimated": true
+        },
+        {
+          "text": "he",
+          "start_s": 30.1391875,
+          "end_s": 30.5013125,
+          "probability": 0.9956417,
+          "estimated": true
+        },
+        {
+          "text": "not",
+          "start_s": 30.5013125,
+          "end_s": 30.9934375,
+          "probability": 0.98054606,
+          "estimated": true
+        },
+        {
+          "text": "even",
+          "start_s": 30.9934375,
+          "end_s": 31.3255625,
+          "probability": 0.99975586,
+          "estimated": true
+        },
+        {
+          "text": "dreaming",
+          "start_s": 31.3255625,
+          "end_s": 31.7126875,
+          "probability": 0.9788456,
+          "estimated": true
+        },
+        {
+          "text": "of",
+          "start_s": 31.7126875,
+          "end_s": 32.11475,
+          "probability": 0.99914205,
+          "estimated": true
+        },
+        {
+          "text": "my",
+          "start_s": 32.11475,
+          "end_s": 32.531875,
+          "probability": 0.99658406,
+          "estimated": true
+        },
+        {
+          "text": "secret",
+          "start_s": 32.531875,
+          "end_s": 32.9015,
+          "probability": 0.99725145,
+          "estimated": true
+        },
+        {
+          "text": "deeds",
+          "start_s": 32.9015,
+          "end_s": 33.278625,
+          "probability": 0.7631768,
+          "estimated": true
+        },
+        {
+          "text": "or",
+          "start_s": 33.278625,
+          "end_s": 33.61825,
+          "probability": 0.94745296,
+          "estimated": true
+        },
+        {
+          "text": "thoughts.",
+          "start_s": 33.61825,
+          "end_s": 34.3675,
+          "probability": 0.57830757,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 34.3675,
+          "end_s": 34.7270625,
+          "probability": 0.94882196,
+          "estimated": true
+        },
+        {
+          "text": "have",
+          "start_s": 34.7270625,
+          "end_s": 35.2191875,
+          "probability": 0.5735916,
+          "estimated": true
+        },
+        {
+          "text": "fairly",
+          "start_s": 35.2191875,
+          "end_s": 35.5763125,
+          "probability": 0.9422115,
+          "estimated": true
+        },
+        {
+          "text": "chuckled",
+          "start_s": 35.5763125,
+          "end_s": 36.3405625,
+          "probability": 0.7854212,
+          "estimated": true
+        },
+        {
+          "text": "at",
+          "start_s": 36.3405625,
+          "end_s": 36.7526875,
+          "probability": 0.98943985,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 36.7526875,
+          "end_s": 37.12475,
+          "probability": 0.9988905,
+          "estimated": true
+        },
+        {
+          "text": "idea",
+          "start_s": 37.12475,
+          "end_s": 37.439375,
+          "probability": 0.9958943,
+          "estimated": true
+        },
+        {
+          "text": "and",
+          "start_s": 37.439375,
+          "end_s": 37.9115,
+          "probability": 0.7619797,
+          "estimated": true
+        },
+        {
+          "text": "perhaps",
+          "start_s": 37.9115,
+          "end_s": 38.301125,
+          "probability": 0.99225956,
+          "estimated": true
+        },
+        {
+          "text": "he",
+          "start_s": 38.301125,
+          "end_s": 38.57825,
+          "probability": 0.993248,
+          "estimated": true
+        },
+        {
+          "text": "hurt",
+          "start_s": 38.57825,
+          "end_s": 39.025375,
+          "probability": 0.8968833,
+          "estimated": true
+        },
+        {
+          "text": "me.",
+          "start_s": 39.025375,
+          "end_s": 39.8195625,
+          "probability": 0.945478,
+          "estimated": true
+        },
+        {
+          "text": "For",
+          "start_s": 39.8195625,
+          "end_s": 40.2191875,
+          "probability": 0.7882005,
+          "estimated": true
+        },
+        {
+          "text": "he",
+          "start_s": 40.2191875,
+          "end_s": 40.5613125,
+          "probability": 0.9988639,
+          "estimated": true
+        },
+        {
+          "text": "moved",
+          "start_s": 40.5613125,
+          "end_s": 40.8859375,
+          "probability": 0.9773792,
+          "estimated": true
+        },
+        {
+          "text": "on",
+          "start_s": 40.8859375,
+          "end_s": 41.3705625,
+          "probability": 0.99240345,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 41.3705625,
+          "end_s": 41.7576875,
+          "probability": 0.9993212,
+          "estimated": true
+        },
+        {
+          "text": "bed",
+          "start_s": 41.7576875,
+          "end_s": 42.11725,
+          "probability": 0.9905086,
+          "estimated": true
+        },
+        {
+          "text": "suddenly",
+          "start_s": 42.11725,
+          "end_s": 42.509375,
+          "probability": 0.9922785,
+          "estimated": true
+        },
+        {
+          "text": "as",
+          "start_s": 42.509375,
+          "end_s": 42.8715,
+          "probability": 0.9891757,
+          "estimated": true
+        },
+        {
+          "text": "if",
+          "start_s": 42.8715,
+          "end_s": 43.303625,
+          "probability": 0.9177916,
+          "estimated": true
+        },
+        {
+          "text": "startled.",
+          "start_s": 43.303625,
+          "end_s": 44.045375,
+          "probability": 0.9740368,
+          "estimated": true
+        },
+        {
+          "text": "Now",
+          "start_s": 44.045375,
+          "end_s": 44.395,
+          "probability": 0.9155851,
+          "estimated": true
+        },
+        {
+          "text": "you",
+          "start_s": 44.395,
+          "end_s": 44.7370625,
+          "probability": 0.9914083,
+          "estimated": true
+        },
+        {
+          "text": "may",
+          "start_s": 44.7370625,
+          "end_s": 45.1116875,
+          "probability": 0.997847,
+          "estimated": true
+        },
+        {
+          "text": "think",
+          "start_s": 45.1116875,
+          "end_s": 45.5438125,
+          "probability": 0.99866575,
+          "estimated": true
+        },
+        {
+          "text": "that",
+          "start_s": 45.5438125,
+          "end_s": 45.8809375,
+          "probability": 0.9878596,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 45.8809375,
+          "end_s": 46.3330625,
+          "probability": 0.9972648,
+          "estimated": true
+        },
+        {
+          "text": "drew",
+          "start_s": 46.3330625,
+          "end_s": 46.7226875,
+          "probability": 0.9057626,
+          "estimated": true
+        },
+        {
+          "text": "back",
+          "start_s": 46.7226875,
+          "end_s": 47.13725,
+          "probability": 0.99775183,
+          "estimated": true
+        },
+        {
+          "text": "but",
+          "start_s": 47.13725,
+          "end_s": 47.451875,
+          "probability": 0.7775451,
+          "estimated": true
+        },
+        {
+          "text": "know",
+          "start_s": 47.451875,
+          "end_s": 47.9065,
+          "probability": 0.56021565,
+          "estimated": true
+        },
+        {
+          "text": "his",
+          "start_s": 47.9065,
+          "end_s": 48.296125,
+          "probability": 0.60826147,
+          "estimated": true
+        },
+        {
+          "text": "room",
+          "start_s": 48.296125,
+          "end_s": 48.63825,
+          "probability": 0.9978794,
+          "estimated": true
+        },
+        {
+          "text": "was",
+          "start_s": 48.63825,
+          "end_s": 49.072875,
+          "probability": 0.9996262,
+          "estimated": true
+        },
+        {
+          "text": "as",
+          "start_s": 49.072875,
+          "end_s": 49.4575,
+          "probability": 0.9883497,
+          "estimated": true
+        },
+        {
+          "text": "black",
+          "start_s": 49.4575,
+          "end_s": 49.7995625,
+          "probability": 0.99900293,
+          "estimated": true
+        },
+        {
+          "text": "as",
+          "start_s": 49.7995625,
+          "end_s": 50.1791875,
+          "probability": 0.9895833,
+          "estimated": true
+        },
+        {
+          "text": "pitch",
+          "start_s": 50.1791875,
+          "end_s": 50.5663125,
+          "probability": 0.98481005,
+          "estimated": true
+        },
+        {
+          "text": "with",
+          "start_s": 50.5663125,
+          "end_s": 50.9884375,
+          "probability": 0.9302909,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 50.9884375,
+          "end_s": 51.3605625,
+          "probability": 0.9907958,
+          "estimated": true
+        },
+        {
+          "text": "thick",
+          "start_s": 51.3605625,
+          "end_s": 51.7201875,
+          "probability": 0.9372949,
+          "estimated": true
+        },
+        {
+          "text": "darkness",
+          "start_s": 51.7201875,
+          "end_s": 52.03975,
+          "probability": 0.99510443,
+          "estimated": true
+        },
+        {
+          "text": "for",
+          "start_s": 52.03975,
+          "end_s": 52.531875,
+          "probability": 0.98738116,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 52.531875,
+          "end_s": 52.914,
+          "probability": 0.9953683,
+          "estimated": true
+        },
+        {
+          "text": "shutters",
+          "start_s": 52.914,
+          "end_s": 53.58575,
+          "probability": 0.96484613,
+          "estimated": true
+        },
+        {
+          "text": "were",
+          "start_s": 53.58575,
+          "end_s": 53.967875,
+          "probability": 0.81750053,
+          "estimated": true
+        },
+        {
+          "text": "closed",
+          "start_s": 53.967875,
+          "end_s": 54.3775,
+          "probability": 0.7623162,
+          "estimated": true
+        },
+        {
+          "text": "fastened",
+          "start_s": 54.3775,
+          "end_s": 55.1366875,
+          "probability": 0.3803667,
+          "estimated": true
+        },
+        {
+          "text": "through",
+          "start_s": 55.1366875,
+          "end_s": 55.6013125,
+          "probability": 0.9828116,
+          "estimated": true
+        },
+        {
+          "text": "fear",
+          "start_s": 55.6013125,
+          "end_s": 55.9284375,
+          "probability": 0.99691296,
+          "estimated": true
+        },
+        {
+          "text": "of",
+          "start_s": 55.9284375,
+          "end_s": 56.2730625,
+          "probability": 0.9997978,
+          "estimated": true
+        },
+        {
+          "text": "robbers",
+          "start_s": 56.2730625,
+          "end_s": 57.03725,
+          "probability": 0.90874934,
+          "estimated": true
+        },
+        {
+          "text": "and",
+          "start_s": 57.03725,
+          "end_s": 57.444375,
+          "probability": 0.6702346,
+          "estimated": true
+        },
+        {
+          "text": "so",
+          "start_s": 57.444375,
+          "end_s": 57.8365,
+          "probability": 0.9736096,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 57.8365,
+          "end_s": 58.281125,
+          "probability": 0.9780431,
+          "estimated": true
+        },
+        {
+          "text": "knew.[_EOT_]",
+          "start_s": 58.281125,
+          "end_s": 59.345,
+          "probability": 0.6354132,
+          "estimated": true
+        }
+      ]
+    },
+    {
+      "text": "So I knew that he could not see the opening of the door, and I kept pushing it on, steadily, steadily. I had my head in and was about to open the lantern when my thumb slipped upon the tin fascinating, and the old man sprang up in bed crying out, 'Who's there?' I kept quite still, and said nothing.",
+      "start_s": 59.345,
+      "end_s": 88.8575,
+      "words": [
+        {
+          "text": "[_BEG_]So",
+          "start_s": 59.345,
+          "end_s": 59.60575,
+          "probability": 0.54114294,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 59.60575,
+          "end_s": 60.0561875,
+          "probability": 0.9378698,
+          "estimated": true
+        },
+        {
+          "text": "knew",
+          "start_s": 60.0561875,
+          "end_s": 60.3665625,
+          "probability": 0.99618876,
+          "estimated": true
+        },
+        {
+          "text": "that",
+          "start_s": 60.3665625,
+          "end_s": 60.8795,
+          "probability": 0.99647003,
+          "estimated": true
+        },
+        {
+          "text": "he",
+          "start_s": 60.8795,
+          "end_s": 61.222375,
+          "probability": 0.99889815,
+          "estimated": true
+        },
+        {
+          "text": "could",
+          "start_s": 61.222375,
+          "end_s": 61.6853125,
+          "probability": 0.86120915,
+          "estimated": true
+        },
+        {
+          "text": "not",
+          "start_s": 61.6853125,
+          "end_s": 61.9881875,
+          "probability": 0.9996758,
+          "estimated": true
+        },
+        {
+          "text": "see",
+          "start_s": 61.9881875,
+          "end_s": 62.416125,
+          "probability": 0.99862957,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 62.416125,
+          "end_s": 62.8065,
+          "probability": 0.99920684,
+          "estimated": true
+        },
+        {
+          "text": "opening",
+          "start_s": 62.8065,
+          "end_s": 63.3169375,
+          "probability": 0.9996014,
+          "estimated": true
+        },
+        {
+          "text": "of",
+          "start_s": 63.3169375,
+          "end_s": 63.6473125,
+          "probability": 0.99907345,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 63.6473125,
+          "end_s": 64.12275,
+          "probability": 0.9994775,
+          "estimated": true
+        },
+        {
+          "text": "door,",
+          "start_s": 64.12275,
+          "end_s": 64.8610625,
+          "probability": 0.533944,
+          "estimated": true
+        },
+        {
+          "text": "and",
+          "start_s": 64.8610625,
+          "end_s": 65.3239375,
+          "probability": 0.991136,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 65.3239375,
+          "end_s": 65.706875,
+          "probability": 0.9993479,
+          "estimated": true
+        },
+        {
+          "text": "kept",
+          "start_s": 65.706875,
+          "end_s": 66.13475,
+          "probability": 0.99936694,
+          "estimated": true
+        },
+        {
+          "text": "pushing",
+          "start_s": 66.13475,
+          "end_s": 66.5551875,
+          "probability": 0.91879874,
+          "estimated": true
+        },
+        {
+          "text": "it",
+          "start_s": 66.5551875,
+          "end_s": 66.8580625,
+          "probability": 0.9947192,
+          "estimated": true
+        },
+        {
+          "text": "on,",
+          "start_s": 66.8580625,
+          "end_s": 67.686375,
+          "probability": 0.6942471,
+          "estimated": true
+        },
+        {
+          "text": "steadily,",
+          "start_s": 67.686375,
+          "end_s": 68.5571875,
+          "probability": 0.7930109,
+          "estimated": true
+        },
+        {
+          "text": "steadily.",
+          "start_s": 68.5571875,
+          "end_s": 69.333,
+          "probability": 0.89643866,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 69.333,
+          "end_s": 69.6884375,
+          "probability": 0.78650504,
+          "estimated": true
+        },
+        {
+          "text": "had",
+          "start_s": 69.6884375,
+          "end_s": 70.1013125,
+          "probability": 0.9562746,
+          "estimated": true
+        },
+        {
+          "text": "my",
+          "start_s": 70.1013125,
+          "end_s": 70.61425,
+          "probability": 0.9992183,
+          "estimated": true
+        },
+        {
+          "text": "head",
+          "start_s": 70.61425,
+          "end_s": 71.019625,
+          "probability": 0.9651581,
+          "estimated": true
+        },
+        {
+          "text": "in",
+          "start_s": 71.019625,
+          "end_s": 71.4200625,
+          "probability": 0.9991916,
+          "estimated": true
+        },
+        {
+          "text": "and",
+          "start_s": 71.4200625,
+          "end_s": 71.7154375,
+          "probability": 0.7359487,
+          "estimated": true
+        },
+        {
+          "text": "was",
+          "start_s": 71.7154375,
+          "end_s": 72.190875,
+          "probability": 0.99746644,
+          "estimated": true
+        },
+        {
+          "text": "about",
+          "start_s": 72.190875,
+          "end_s": 72.62375,
+          "probability": 0.9996224,
+          "estimated": true
+        },
+        {
+          "text": "to",
+          "start_s": 72.62375,
+          "end_s": 72.9591875,
+          "probability": 0.9939492,
+          "estimated": true
+        },
+        {
+          "text": "open",
+          "start_s": 72.9591875,
+          "end_s": 73.3895625,
+          "probability": 0.99898964,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 73.3895625,
+          "end_s": 73.85,
+          "probability": 0.9908071,
+          "estimated": true
+        },
+        {
+          "text": "lantern",
+          "start_s": 73.85,
+          "end_s": 74.150375,
+          "probability": 0.9755633,
+          "estimated": true
+        },
+        {
+          "text": "when",
+          "start_s": 74.150375,
+          "end_s": 74.66575,
+          "probability": 0.5809587,
+          "estimated": true
+        },
+        {
+          "text": "my",
+          "start_s": 74.66575,
+          "end_s": 74.9661875,
+          "probability": 0.99937075,
+          "estimated": true
+        },
+        {
+          "text": "thumb",
+          "start_s": 74.9661875,
+          "end_s": 75.4690625,
+          "probability": 0.8759366,
+          "estimated": true
+        },
+        {
+          "text": "slipped",
+          "start_s": 75.4690625,
+          "end_s": 75.882,
+          "probability": 0.992676,
+          "estimated": true
+        },
+        {
+          "text": "upon",
+          "start_s": 75.882,
+          "end_s": 76.282375,
+          "probability": 0.9906786,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 76.282375,
+          "end_s": 76.6053125,
+          "probability": 0.9973637,
+          "estimated": true
+        },
+        {
+          "text": "tin",
+          "start_s": 76.6053125,
+          "end_s": 77.0656875,
+          "probability": 0.6919271,
+          "estimated": true
+        },
+        {
+          "text": "fascinating,",
+          "start_s": 77.0656875,
+          "end_s": 77.904,
+          "probability": 0.5290532,
+          "estimated": true
+        },
+        {
+          "text": "and",
+          "start_s": 77.904,
+          "end_s": 78.2219375,
+          "probability": 0.9885721,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 78.2219375,
+          "end_s": 78.6123125,
+          "probability": 0.99939364,
+          "estimated": true
+        },
+        {
+          "text": "old",
+          "start_s": 78.6123125,
+          "end_s": 79.01275,
+          "probability": 0.99628186,
+          "estimated": true
+        },
+        {
+          "text": "man",
+          "start_s": 79.01275,
+          "end_s": 79.513125,
+          "probability": 0.9962135,
+          "estimated": true
+        },
+        {
+          "text": "sprang",
+          "start_s": 79.513125,
+          "end_s": 80.2289375,
+          "probability": 0.6754894,
+          "estimated": true
+        },
+        {
+          "text": "up",
+          "start_s": 80.2289375,
+          "end_s": 80.651875,
+          "probability": 0.9969567,
+          "estimated": true
+        },
+        {
+          "text": "in",
+          "start_s": 80.651875,
+          "end_s": 81.10975,
+          "probability": 0.99960715,
+          "estimated": true
+        },
+        {
+          "text": "bed",
+          "start_s": 81.10975,
+          "end_s": 81.4751875,
+          "probability": 0.99597216,
+          "estimated": true
+        },
+        {
+          "text": "crying",
+          "start_s": 81.4751875,
+          "end_s": 81.9630625,
+          "probability": 0.9962591,
+          "estimated": true
+        },
+        {
+          "text": "out,",
+          "start_s": 81.9630625,
+          "end_s": 82.751375,
+          "probability": 0.94294596,
+          "estimated": true
+        },
+        {
+          "text": "'Who's",
+          "start_s": 82.751375,
+          "end_s": 83.952625,
+          "probability": 0.23717088,
+          "estimated": true
+        },
+        {
+          "text": "there?'",
+          "start_s": 83.952625,
+          "end_s": 84.6934375,
+          "probability": 0.82966816,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 84.6934375,
+          "end_s": 85.1013125,
+          "probability": 0.9630838,
+          "estimated": true
+        },
+        {
+          "text": "kept",
+          "start_s": 85.1013125,
+          "end_s": 85.61425,
+          "probability": 0.9926893,
+          "estimated": true
+        },
+        {
+          "text": "quite",
+          "start_s": 85.61425,
+          "end_s": 85.977125,
+          "probability": 0.88099676,
+          "estimated": true
+        },
+        {
+          "text": "still,",
+          "start_s": 85.977125,
+          "end_s": 86.7604375,
+          "probability": 0.49849427,
+          "estimated": true
+        },
+        {
+          "text": "and",
+          "start_s": 86.7604375,
+          "end_s": 87.225875,
+          "probability": 0.9783715,
+          "estimated": true
+        },
+        {
+          "text": "said",
+          "start_s": 87.225875,
+          "end_s": 87.59375,
+          "probability": 0.9840571,
+          "estimated": true
+        },
+        {
+          "text": "nothing.[_EOT_]",
+          "start_s": 87.59375,
+          "end_s": 88.8575,
+          "probability": 0.9624944,
+          "estimated": true
+        }
+      ]
+    },
+    {
+      "text": "I said nothing. For a whole hour I did not move a muscle, and in the meantime I did not hear him lie down. He was sitting up in the bed listening just as I have done night after night, harkening to the death watches in the wall.",
+      "start_s": 88.8575,
+      "end_s": 118.215,
+      "words": [
+        {
+          "text": "[_BEG_]I",
+          "start_s": 88.8575,
+          "end_s": 89.310125,
+          "probability": 0.18539236,
+          "estimated": true
+        },
+        {
+          "text": "said",
+          "start_s": 89.310125,
+          "end_s": 89.8039375,
+          "probability": 0.9534262,
+          "estimated": true
+        },
+        {
+          "text": "nothing.",
+          "start_s": 89.8039375,
+          "end_s": 90.7765625,
+          "probability": 0.92183375,
+          "estimated": true
+        },
+        {
+          "text": "For",
+          "start_s": 90.7765625,
+          "end_s": 91.412875,
+          "probability": 0.8934574,
+          "estimated": true
+        },
+        {
+          "text": "a",
+          "start_s": 91.412875,
+          "end_s": 91.9316875,
+          "probability": 0.99810207,
+          "estimated": true
+        },
+        {
+          "text": "whole",
+          "start_s": 91.9316875,
+          "end_s": 92.448,
+          "probability": 0.99732184,
+          "estimated": true
+        },
+        {
+          "text": "hour",
+          "start_s": 92.448,
+          "end_s": 92.9943125,
+          "probability": 0.9999466,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 92.9943125,
+          "end_s": 93.428125,
+          "probability": 0.8144407,
+          "estimated": true
+        },
+        {
+          "text": "did",
+          "start_s": 93.428125,
+          "end_s": 94.0319375,
+          "probability": 0.9867034,
+          "estimated": true
+        },
+        {
+          "text": "not",
+          "start_s": 94.0319375,
+          "end_s": 94.47075,
+          "probability": 0.9993593,
+          "estimated": true
+        },
+        {
+          "text": "move",
+          "start_s": 94.47075,
+          "end_s": 95.0795625,
+          "probability": 0.9961926,
+          "estimated": true
+        },
+        {
+          "text": "a",
+          "start_s": 95.0795625,
+          "end_s": 95.600875,
+          "probability": 0.99347913,
+          "estimated": true
+        },
+        {
+          "text": "muscle,",
+          "start_s": 95.600875,
+          "end_s": 96.5785,
+          "probability": 0.5346757,
+          "estimated": true
+        },
+        {
+          "text": "and",
+          "start_s": 96.5785,
+          "end_s": 97.1998125,
+          "probability": 0.9951936,
+          "estimated": true
+        },
+        {
+          "text": "in",
+          "start_s": 97.1998125,
+          "end_s": 97.636125,
+          "probability": 0.998761,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 97.636125,
+          "end_s": 98.2475,
+          "probability": 0.99874955,
+          "estimated": true
+        },
+        {
+          "text": "meantime",
+          "start_s": 98.2475,
+          "end_s": 98.7463125,
+          "probability": 0.95281357,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 98.7463125,
+          "end_s": 99.280125,
+          "probability": 0.94053537,
+          "estimated": true
+        },
+        {
+          "text": "did",
+          "start_s": 99.280125,
+          "end_s": 99.8239375,
+          "probability": 0.9573568,
+          "estimated": true
+        },
+        {
+          "text": "not",
+          "start_s": 99.8239375,
+          "end_s": 100.27525,
+          "probability": 0.9992488,
+          "estimated": true
+        },
+        {
+          "text": "hear",
+          "start_s": 100.27525,
+          "end_s": 100.8540625,
+          "probability": 0.9972305,
+          "estimated": true
+        },
+        {
+          "text": "him",
+          "start_s": 100.8540625,
+          "end_s": 101.340375,
+          "probability": 0.9874443,
+          "estimated": true
+        },
+        {
+          "text": "lie",
+          "start_s": 101.340375,
+          "end_s": 101.9241875,
+          "probability": 0.9818542,
+          "estimated": true
+        },
+        {
+          "text": "down.",
+          "start_s": 101.9241875,
+          "end_s": 102.9893125,
+          "probability": 0.9919644,
+          "estimated": true
+        },
+        {
+          "text": "He",
+          "start_s": 102.9893125,
+          "end_s": 103.503125,
+          "probability": 0.8978641,
+          "estimated": true
+        },
+        {
+          "text": "was",
+          "start_s": 103.503125,
+          "end_s": 103.9569375,
+          "probability": 0.99723816,
+          "estimated": true
+        },
+        {
+          "text": "sitting",
+          "start_s": 103.9569375,
+          "end_s": 104.54825,
+          "probability": 0.99455607,
+          "estimated": true
+        },
+        {
+          "text": "up",
+          "start_s": 104.54825,
+          "end_s": 105.0295625,
+          "probability": 0.99819344,
+          "estimated": true
+        },
+        {
+          "text": "in",
+          "start_s": 105.0295625,
+          "end_s": 105.520875,
+          "probability": 0.99661446,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 105.520875,
+          "end_s": 106.1471875,
+          "probability": 0.9949431,
+          "estimated": true
+        },
+        {
+          "text": "bed",
+          "start_s": 106.1471875,
+          "end_s": 106.5685,
+          "probability": 0.86343616,
+          "estimated": true
+        },
+        {
+          "text": "listening",
+          "start_s": 106.5685,
+          "end_s": 107.1173125,
+          "probability": 0.9709466,
+          "estimated": true
+        },
+        {
+          "text": "just",
+          "start_s": 107.1173125,
+          "end_s": 107.701125,
+          "probability": 0.9688229,
+          "estimated": true
+        },
+        {
+          "text": "as",
+          "start_s": 107.701125,
+          "end_s": 108.1475,
+          "probability": 0.9985248,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 108.1475,
+          "end_s": 108.6913125,
+          "probability": 0.99941653,
+          "estimated": true
+        },
+        {
+          "text": "have",
+          "start_s": 108.6913125,
+          "end_s": 109.302625,
+          "probability": 0.9696474,
+          "estimated": true
+        },
+        {
+          "text": "done",
+          "start_s": 109.302625,
+          "end_s": 109.8339375,
+          "probability": 0.9955506,
+          "estimated": true
+        },
+        {
+          "text": "night",
+          "start_s": 109.8339375,
+          "end_s": 110.34275,
+          "probability": 0.97215855,
+          "estimated": true
+        },
+        {
+          "text": "after",
+          "start_s": 110.34275,
+          "end_s": 110.8165625,
+          "probability": 0.967844,
+          "estimated": true
+        },
+        {
+          "text": "night,",
+          "start_s": 110.8165625,
+          "end_s": 111.8666875,
+          "probability": 0.66549087,
+          "estimated": true
+        },
+        {
+          "text": "harkening",
+          "start_s": 111.8666875,
+          "end_s": 113.518125,
+          "probability": 0.19069506,
+          "estimated": true
+        },
+        {
+          "text": "to",
+          "start_s": 113.518125,
+          "end_s": 114.0094375,
+          "probability": 0.9987686,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 114.0094375,
+          "end_s": 114.55075,
+          "probability": 0.99930215,
+          "estimated": true
+        },
+        {
+          "text": "death",
+          "start_s": 114.55075,
+          "end_s": 115.0445625,
+          "probability": 0.7332641,
+          "estimated": true
+        },
+        {
+          "text": "watches",
+          "start_s": 115.0445625,
+          "end_s": 115.538375,
+          "probability": 0.98107356,
+          "estimated": true
+        },
+        {
+          "text": "in",
+          "start_s": 115.538375,
+          "end_s": 116.1346875,
+          "probability": 0.9987267,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 116.1346875,
+          "end_s": 116.6635,
+          "probability": 0.9957557,
+          "estimated": true
+        },
+        {
+          "text": "wall.[_EOT_]",
+          "start_s": 116.6635,
+          "end_s": 118.215,
+          "probability": 0.29738703,
+          "estimated": true
+        }
+      ]
+    },
+    {
+      "text": "And I knew it was the groan of mortal terror. It was not a groan of pain or of grief. Oh no, it was the lowest-difold sound that arises from the bottom of the soul when overcharged with aw. I knew the sound well. Many a night, just at midnight when all the world slept. It has wellled up in my own bosom. Deepening.",
+      "start_s": 118.215,
+      "end_s": 147.5875,
+      "words": [
+        {
+          "text": "[_BEG_]And",
+          "start_s": 118.215,
+          "end_s": 118.250875,
+          "probability": 0.854398,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 118.250875,
+          "end_s": 118.6988125,
+          "probability": 0.99871147,
+          "estimated": true
+        },
+        {
+          "text": "knew",
+          "start_s": 118.6988125,
+          "end_s": 119.01425,
+          "probability": 0.99461293,
+          "estimated": true
+        },
+        {
+          "text": "it",
+          "start_s": 119.01425,
+          "end_s": 119.3146875,
+          "probability": 0.99380136,
+          "estimated": true
+        },
+        {
+          "text": "was",
+          "start_s": 119.3146875,
+          "end_s": 119.752625,
+          "probability": 0.99983597,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 119.752625,
+          "end_s": 120.1280625,
+          "probability": 0.99613935,
+          "estimated": true
+        },
+        {
+          "text": "groan",
+          "start_s": 120.1280625,
+          "end_s": 120.8214375,
+          "probability": 0.47697118,
+          "estimated": true
+        },
+        {
+          "text": "of",
+          "start_s": 120.8214375,
+          "end_s": 121.186875,
+          "probability": 0.99769855,
+          "estimated": true
+        },
+        {
+          "text": "mortal",
+          "start_s": 121.186875,
+          "end_s": 121.4248125,
+          "probability": 0.9849754,
+          "estimated": true
+        },
+        {
+          "text": "terror.",
+          "start_s": 121.4248125,
+          "end_s": 122.1781875,
+          "probability": 0.80993897,
+          "estimated": true
+        },
+        {
+          "text": "It",
+          "start_s": 122.1781875,
+          "end_s": 122.568625,
+          "probability": 0.95753396,
+          "estimated": true
+        },
+        {
+          "text": "was",
+          "start_s": 122.568625,
+          "end_s": 122.9365625,
+          "probability": 0.99759585,
+          "estimated": true
+        },
+        {
+          "text": "not",
+          "start_s": 122.9365625,
+          "end_s": 123.2745,
+          "probability": 0.99988556,
+          "estimated": true
+        },
+        {
+          "text": "a",
+          "start_s": 123.2745,
+          "end_s": 123.56,
+          "probability": 0.9984258,
+          "estimated": true
+        },
+        {
+          "text": "groan",
+          "start_s": 123.56,
+          "end_s": 124.348375,
+          "probability": 0.98851365,
+          "estimated": true
+        },
+        {
+          "text": "of",
+          "start_s": 124.348375,
+          "end_s": 124.6013125,
+          "probability": 0.9993822,
+          "estimated": true
+        },
+        {
+          "text": "pain",
+          "start_s": 124.6013125,
+          "end_s": 124.96425,
+          "probability": 0.99728763,
+          "estimated": true
+        },
+        {
+          "text": "or",
+          "start_s": 124.96425,
+          "end_s": 125.3846875,
+          "probability": 0.9145449,
+          "estimated": true
+        },
+        {
+          "text": "of",
+          "start_s": 125.3846875,
+          "end_s": 125.775125,
+          "probability": 0.7907875,
+          "estimated": true
+        },
+        {
+          "text": "grief.",
+          "start_s": 125.775125,
+          "end_s": 126.4635,
+          "probability": 0.80977523,
+          "estimated": true
+        },
+        {
+          "text": "Oh",
+          "start_s": 126.4635,
+          "end_s": 126.8114375,
+          "probability": 0.84398663,
+          "estimated": true
+        },
+        {
+          "text": "no,",
+          "start_s": 126.8114375,
+          "end_s": 127.5398125,
+          "probability": 0.6901477,
+          "estimated": true
+        },
+        {
+          "text": "it",
+          "start_s": 127.5398125,
+          "end_s": 127.81025,
+          "probability": 0.98145163,
+          "estimated": true
+        },
+        {
+          "text": "was",
+          "start_s": 127.81025,
+          "end_s": 128.2381875,
+          "probability": 0.9993898,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 128.2381875,
+          "end_s": 128.561125,
+          "probability": 0.9945826,
+          "estimated": true
+        },
+        {
+          "text": "lowest-difold",
+          "start_s": 128.561125,
+          "end_s": 130.303375,
+          "probability": 0.06648501,
+          "estimated": true
+        },
+        {
+          "text": "sound",
+          "start_s": 130.303375,
+          "end_s": 130.6363125,
+          "probability": 0.9822775,
+          "estimated": true
+        },
+        {
+          "text": "that",
+          "start_s": 130.6363125,
+          "end_s": 130.95425,
+          "probability": 0.99301124,
+          "estimated": true
+        },
+        {
+          "text": "arises",
+          "start_s": 130.95425,
+          "end_s": 131.3246875,
+          "probability": 0.95772207,
+          "estimated": true
+        },
+        {
+          "text": "from",
+          "start_s": 131.3246875,
+          "end_s": 131.772625,
+          "probability": 0.99612796,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 131.772625,
+          "end_s": 132.0405625,
+          "probability": 0.9875695,
+          "estimated": true
+        },
+        {
+          "text": "bottom",
+          "start_s": 132.0405625,
+          "end_s": 132.4435,
+          "probability": 0.9902498,
+          "estimated": true
+        },
+        {
+          "text": "of",
+          "start_s": 132.4435,
+          "end_s": 132.7389375,
+          "probability": 0.99945843,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 132.7389375,
+          "end_s": 133.164375,
+          "probability": 0.9925851,
+          "estimated": true
+        },
+        {
+          "text": "soul",
+          "start_s": 133.164375,
+          "end_s": 133.5123125,
+          "probability": 0.99519455,
+          "estimated": true
+        },
+        {
+          "text": "when",
+          "start_s": 133.5123125,
+          "end_s": 133.88275,
+          "probability": 0.9641811,
+          "estimated": true
+        },
+        {
+          "text": "overcharged",
+          "start_s": 133.88275,
+          "end_s": 134.483625,
+          "probability": 0.9193816,
+          "estimated": true
+        },
+        {
+          "text": "with",
+          "start_s": 134.483625,
+          "end_s": 134.9090625,
+          "probability": 0.99712783,
+          "estimated": true
+        },
+        {
+          "text": "aw.",
+          "start_s": 134.9090625,
+          "end_s": 135.62,
+          "probability": 0.39742178,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 135.62,
+          "end_s": 135.9129375,
+          "probability": 0.99454844,
+          "estimated": true
+        },
+        {
+          "text": "knew",
+          "start_s": 135.9129375,
+          "end_s": 136.253375,
+          "probability": 0.98505616,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 136.253375,
+          "end_s": 136.6263125,
+          "probability": 0.99833053,
+          "estimated": true
+        },
+        {
+          "text": "sound",
+          "start_s": 136.6263125,
+          "end_s": 137.02675,
+          "probability": 0.9976377,
+          "estimated": true
+        },
+        {
+          "text": "well.",
+          "start_s": 137.02675,
+          "end_s": 137.767625,
+          "probability": 0.76920205,
+          "estimated": true
+        },
+        {
+          "text": "Many",
+          "start_s": 137.767625,
+          "end_s": 138.1205625,
+          "probability": 0.28194624,
+          "estimated": true
+        },
+        {
+          "text": "a",
+          "start_s": 138.1205625,
+          "end_s": 138.471,
+          "probability": 0.9800804,
+          "estimated": true
+        },
+        {
+          "text": "night,",
+          "start_s": 138.471,
+          "end_s": 139.129375,
+          "probability": 0.72158754,
+          "estimated": true
+        },
+        {
+          "text": "just",
+          "start_s": 139.129375,
+          "end_s": 139.5198125,
+          "probability": 0.99704415,
+          "estimated": true
+        },
+        {
+          "text": "at",
+          "start_s": 139.5198125,
+          "end_s": 139.86275,
+          "probability": 0.9708133,
+          "estimated": true
+        },
+        {
+          "text": "midnight",
+          "start_s": 139.86275,
+          "end_s": 140.1356875,
+          "probability": 0.839304,
+          "estimated": true
+        },
+        {
+          "text": "when",
+          "start_s": 140.1356875,
+          "end_s": 140.528625,
+          "probability": 0.6123894,
+          "estimated": true
+        },
+        {
+          "text": "all",
+          "start_s": 140.528625,
+          "end_s": 140.8840625,
+          "probability": 0.9997978,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 140.8840625,
+          "end_s": 141.2545,
+          "probability": 0.9672461,
+          "estimated": true
+        },
+        {
+          "text": "world",
+          "start_s": 141.2545,
+          "end_s": 141.57,
+          "probability": 0.68497944,
+          "estimated": true
+        },
+        {
+          "text": "slept.",
+          "start_s": 141.57,
+          "end_s": 142.355875,
+          "probability": 0.8313346,
+          "estimated": true
+        },
+        {
+          "text": "It",
+          "start_s": 142.355875,
+          "end_s": 142.6438125,
+          "probability": 0.8981261,
+          "estimated": true
+        },
+        {
+          "text": "has",
+          "start_s": 142.6438125,
+          "end_s": 143.02925,
+          "probability": 0.9423023,
+          "estimated": true
+        },
+        {
+          "text": "wellled",
+          "start_s": 143.02925,
+          "end_s": 143.755125,
+          "probability": 0.4251021,
+          "estimated": true
+        },
+        {
+          "text": "up",
+          "start_s": 143.755125,
+          "end_s": 144.1280625,
+          "probability": 0.99674755,
+          "estimated": true
+        },
+        {
+          "text": "in",
+          "start_s": 144.1280625,
+          "end_s": 144.4585,
+          "probability": 0.91193205,
+          "estimated": true
+        },
+        {
+          "text": "my",
+          "start_s": 144.4585,
+          "end_s": 144.7789375,
+          "probability": 0.9987419,
+          "estimated": true
+        },
+        {
+          "text": "own",
+          "start_s": 144.7789375,
+          "end_s": 145.101875,
+          "probability": 0.99951184,
+          "estimated": true
+        },
+        {
+          "text": "bosom.",
+          "start_s": 145.101875,
+          "end_s": 146.1531875,
+          "probability": 0.5137314,
+          "estimated": true
+        },
+        {
+          "text": "Deepening.[_EOT_]",
+          "start_s": 146.1531875,
+          "end_s": 147.5875,
+          "probability": 0.46154785,
+          "estimated": true
+        }
+      ]
+    },
+    {
+      "text": "Aining with its dreadful echo the terrors that distracted me. I say I knew it well. I knew what the old man felt and pitted him although I chuckled that heart. I knew that he had been laing awake ever since the first slight noise when he had turned in his bed. His fears had been growing upon him ever since. He had been trying to fancy them.",
+      "start_s": 147.5875,
+      "end_s": 176.9825,
+      "words": [
+        {
+          "text": "[_BEG_]Aining",
+          "start_s": 147.5875,
+          "end_s": 148.12,
+          "probability": 0.22243944,
+          "estimated": true
+        },
+        {
+          "text": "with",
+          "start_s": 148.12,
+          "end_s": 148.470875,
+          "probability": 0.929475,
+          "estimated": true
+        },
+        {
+          "text": "its",
+          "start_s": 148.470875,
+          "end_s": 148.87425,
+          "probability": 0.98759586,
+          "estimated": true
+        },
+        {
+          "text": "dreadful",
+          "start_s": 148.87425,
+          "end_s": 149.5334375,
+          "probability": 0.9983496,
+          "estimated": true
+        },
+        {
+          "text": "echo",
+          "start_s": 149.5334375,
+          "end_s": 149.9843125,
+          "probability": 0.93615586,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 149.9843125,
+          "end_s": 150.347625,
+          "probability": 0.9754684,
+          "estimated": true
+        },
+        {
+          "text": "terrors",
+          "start_s": 150.347625,
+          "end_s": 151.021875,
+          "probability": 0.58540803,
+          "estimated": true
+        },
+        {
+          "text": "that",
+          "start_s": 151.021875,
+          "end_s": 151.4451875,
+          "probability": 0.999123,
+          "estimated": true
+        },
+        {
+          "text": "distracted",
+          "start_s": 151.4451875,
+          "end_s": 151.8035625,
+          "probability": 0.9233559,
+          "estimated": true
+        },
+        {
+          "text": "me.",
+          "start_s": 151.8035625,
+          "end_s": 152.45525,
+          "probability": 0.9278065,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 152.45525,
+          "end_s": 152.833625,
+          "probability": 0.9666338,
+          "estimated": true
+        },
+        {
+          "text": "say",
+          "start_s": 152.833625,
+          "end_s": 153.272,
+          "probability": 0.93493176,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 153.272,
+          "end_s": 153.6428125,
+          "probability": 0.92913115,
+          "estimated": true
+        },
+        {
+          "text": "knew",
+          "start_s": 153.6428125,
+          "end_s": 154.0061875,
+          "probability": 0.97562474,
+          "estimated": true
+        },
+        {
+          "text": "it",
+          "start_s": 154.0061875,
+          "end_s": 154.3570625,
+          "probability": 0.99710125,
+          "estimated": true
+        },
+        {
+          "text": "well.",
+          "start_s": 154.3570625,
+          "end_s": 155.08875,
+          "probability": 0.5349573,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 155.08875,
+          "end_s": 155.382125,
+          "probability": 0.99858004,
+          "estimated": true
+        },
+        {
+          "text": "knew",
+          "start_s": 155.382125,
+          "end_s": 155.7479375,
+          "probability": 0.97745377,
+          "estimated": true
+        },
+        {
+          "text": "what",
+          "start_s": 155.7479375,
+          "end_s": 156.1913125,
+          "probability": 0.994575,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 156.1913125,
+          "end_s": 156.5596875,
+          "probability": 0.99700993,
+          "estimated": true
+        },
+        {
+          "text": "old",
+          "start_s": 156.5596875,
+          "end_s": 156.9355,
+          "probability": 0.9219683,
+          "estimated": true
+        },
+        {
+          "text": "man",
+          "start_s": 156.9355,
+          "end_s": 157.293875,
+          "probability": 0.9925416,
+          "estimated": true
+        },
+        {
+          "text": "felt",
+          "start_s": 157.293875,
+          "end_s": 157.64975,
+          "probability": 0.97806925,
+          "estimated": true
+        },
+        {
+          "text": "and",
+          "start_s": 157.64975,
+          "end_s": 157.9830625,
+          "probability": 0.85369915,
+          "estimated": true
+        },
+        {
+          "text": "pitted",
+          "start_s": 157.9830625,
+          "end_s": 158.7623125,
+          "probability": 0.20774844,
+          "estimated": true
+        },
+        {
+          "text": "him",
+          "start_s": 158.7623125,
+          "end_s": 159.130625,
+          "probability": 0.99427915,
+          "estimated": true
+        },
+        {
+          "text": "although",
+          "start_s": 159.130625,
+          "end_s": 159.4865,
+          "probability": 0.41948614,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 159.4865,
+          "end_s": 159.747375,
+          "probability": 0.9931343,
+          "estimated": true
+        },
+        {
+          "text": "chuckled",
+          "start_s": 159.747375,
+          "end_s": 160.5915625,
+          "probability": 0.75076467,
+          "estimated": true
+        },
+        {
+          "text": "that",
+          "start_s": 160.5915625,
+          "end_s": 160.9499375,
+          "probability": 0.89210624,
+          "estimated": true
+        },
+        {
+          "text": "heart.",
+          "start_s": 160.9499375,
+          "end_s": 161.646625,
+          "probability": 0.9281711,
+          "estimated": true
+        },
+        {
+          "text": "I",
+          "start_s": 161.646625,
+          "end_s": 162.035,
+          "probability": 0.9971393,
+          "estimated": true
+        },
+        {
+          "text": "knew",
+          "start_s": 162.035,
+          "end_s": 162.4233125,
+          "probability": 0.99343747,
+          "estimated": true
+        },
+        {
+          "text": "that",
+          "start_s": 162.4233125,
+          "end_s": 162.7366875,
+          "probability": 0.99659544,
+          "estimated": true
+        },
+        {
+          "text": "he",
+          "start_s": 162.7366875,
+          "end_s": 163.0425,
+          "probability": 0.9991154,
+          "estimated": true
+        },
+        {
+          "text": "had",
+          "start_s": 163.0425,
+          "end_s": 163.520875,
+          "probability": 0.98973805,
+          "estimated": true
+        },
+        {
+          "text": "been",
+          "start_s": 163.520875,
+          "end_s": 163.85175,
+          "probability": 0.99969107,
+          "estimated": true
+        },
+        {
+          "text": "laing",
+          "start_s": 163.85175,
+          "end_s": 164.5709375,
+          "probability": 0.4388214,
+          "estimated": true
+        },
+        {
+          "text": "awake",
+          "start_s": 164.5709375,
+          "end_s": 164.9693125,
+          "probability": 0.7087803,
+          "estimated": true
+        },
+        {
+          "text": "ever",
+          "start_s": 164.9693125,
+          "end_s": 165.337625,
+          "probability": 0.6133339,
+          "estimated": true
+        },
+        {
+          "text": "since",
+          "start_s": 165.337625,
+          "end_s": 165.711,
+          "probability": 0.99454087,
+          "estimated": true
+        },
+        {
+          "text": "the",
+          "start_s": 165.711,
+          "end_s": 165.974375,
+          "probability": 0.9932783,
+          "estimated": true
+        },
+        {
+          "text": "first",
+          "start_s": 165.974375,
+          "end_s": 166.4051875,
+          "probability": 0.9979936,
+          "estimated": true
+        },
+        {
+          "text": "slight",
+          "start_s": 166.4051875,
+          "end_s": 166.6985625,
+          "probability": 0.51953286,
+          "estimated": true
+        },
+        {
+          "text": "noise",
+          "start_s": 166.6985625,
+          "end_s": 167.0669375,
+          "probability": 0.9788848,
+          "estimated": true
+        },
+        {
+          "text": "when",
+          "start_s": 167.0669375,
+          "end_s": 167.51275,
+          "probability": 0.5637637,
+          "estimated": true
+        },
+        {
+          "text": "he",
+          "start_s": 167.51275,
+          "end_s": 167.858625,
+          "probability": 0.9992678,
+          "estimated": true
+        },
+        {
+          "text": "had",
+          "start_s": 167.858625,
+          "end_s": 168.247,
+          "probability": 0.9942943,
+          "estimated": true
+        },
+        {
+          "text": "turned",
+          "start_s": 168.247,
+          "end_s": 168.5778125,
+          "probability": 0.9923618,
+          "estimated": true
+        },
+        {
+          "text": "in",
+          "start_s": 168.5778125,
+          "end_s": 168.9061875,
+          "probability": 0.98534554,
+          "estimated": true
+        },
+        {
+          "text": "his",
+          "start_s": 168.9061875,
+          "end_s": 169.2645625,
+          "probability": 0.98740375,
+          "estimated": true
+        },
+        {
+          "text": "bed.",
+          "start_s": 169.2645625,
+          "end_s": 170.09875,
+          "probability": 0.89459735,
+          "estimated": true
+        },
+        {
+          "text": "His",
+          "start_s": 170.09875,
+          "end_s": 170.419625,
+          "probability": 0.9361809,
+          "estimated": true
+        },
+        {
+          "text": "fears",
+          "start_s": 170.419625,
+          "end_s": 170.7254375,
+          "probability": 0.9814067,
+          "estimated": true
+        },
+        {
+          "text": "had",
+          "start_s": 170.7254375,
+          "end_s": 171.0963125,
+          "probability": 0.9974398,
+          "estimated": true
+        },
+        {
+          "text": "been",
+          "start_s": 171.0963125,
+          "end_s": 171.5696875,
+          "probability": 0.9995347,
+          "estimated": true
+        },
+        {
+          "text": "growing",
+          "start_s": 171.5696875,
+          "end_s": 171.9355,
+          "probability": 0.9760714,
+          "estimated": true
+        },
+        {
+          "text": "upon",
+          "start_s": 171.9355,
+          "end_s": 172.203875,
+          "probability": 0.98314536,
+          "estimated": true
+        },
+        {
+          "text": "him",
+          "start_s": 172.203875,
+          "end_s": 172.66725,
+          "probability": 0.9995729,
+          "estimated": true
+        },
+        {
+          "text": "ever",
+          "start_s": 172.66725,
+          "end_s": 172.9430625,
+          "probability": 0.9822382,
+          "estimated": true
+        },
+        {
+          "text": "since.",
+          "start_s": 172.9430625,
+          "end_s": 173.7473125,
+          "probability": 0.9417453,
+          "estimated": true
+        },
+        {
+          "text": "He",
+          "start_s": 173.7473125,
+          "end_s": 174.080625,
+          "probability": 0.5411765,
+          "estimated": true
+        },
+        {
+          "text": "had",
+          "start_s": 174.080625,
+          "end_s": 174.4565,
+          "probability": 0.99401367,
+          "estimated": true
+        },
+        {
+          "text": "been",
+          "start_s": 174.4565,
+          "end_s": 174.797375,
+          "probability": 0.9997521,
+          "estimated": true
+        },
+        {
+          "text": "trying",
+          "start_s": 174.797375,
+          "end_s": 175.2281875,
+          "probability": 0.9983096,
+          "estimated": true
+        },
+        {
+          "text": "to",
+          "start_s": 175.2281875,
+          "end_s": 175.4790625,
+          "probability": 0.99874955,
+          "estimated": true
+        },
+        {
+          "text": "fancy",
+          "start_s": 175.4790625,
+          "end_s": 175.9599375,
+          "probability": 0.80775905,
+          "estimated": true
+        },
+        {
+          "text": "them.[_EOT_]",
+          "start_s": 175.9599375,
+          "end_s": 176.9825,
+          "probability": 0.60101223,
+          "estimated": true
+        }
+      ]
+    },
+    {
+      "text": "Coseless but could not. He had been saying.",
+      "start_s": 176.9825,
+      "end_s": 206.4,
+      "words": [
+        {
+          "text": "[_BEG_]Coseless",
+          "start_s": 176.9825,
+          "end_s": 184.9714285714286,
+          "probability": 0.11624694,
+          "estimated": true
+        },
+        {
+          "text": "but",
+          "start_s": 184.9714285714286,
+          "end_s": 187.11428571428573,
+          "probability": 0.73613405,
+          "estimated": true
+        },
+        {
+          "text": "could",
+          "start_s": 187.11428571428573,
+          "end_s": 189.25714285714287,
+          "probability": 0.5356434,
+          "estimated": true
+        },
+        {
+          "text": "not.",
+          "start_s": 189.25714285714287,
+          "end_s": 193.54285714285714,
+          "probability": 0.5672909,
+          "estimated": true
+        },
+        {
+          "text": "He",
+          "start_s": 193.54285714285714,
+          "end_s": 195.68571428571428,
+          "probability": 0.9809894,
+          "estimated": true
+        },
+        {
+          "text": "had",
+          "start_s": 195.68571428571428,
+          "end_s": 197.82857142857142,
+          "probability": 0.9907882,
+          "estimated": true
+        },
+        {
+          "text": "been",
+          "start_s": 197.82857142857142,
+          "end_s": 199.9714285714286,
+          "probability": 0.9999504,
+          "estimated": true
+        },
+        {
+          "text": "saying.[_EOT_]",
+          "start_s": 199.9714285714286,
+          "end_s": 206.4,
+          "probability": 0.5457581,
+          "estimated": true
+        }
+      ]
+    }
+  ],
+  "words": [
+    {
+      "text": "[_BEG_]Then",
+      "start_s": 0.005,
+      "end_s": 0.9426875,
+      "probability": 0.44211447,
+      "estimated": true
+    },
+    {
+      "text": "usually",
+      "start_s": 0.9426875,
+      "end_s": 1.3940625,
+      "probability": 0.9881235,
+      "estimated": true
+    },
+    {
+      "text": "cautious",
+      "start_s": 1.3940625,
+      "end_s": 1.8954375,
+      "probability": 0.9971117,
+      "estimated": true
+    },
+    {
+      "text": "in",
+      "start_s": 1.8954375,
+      "end_s": 2.4743125,
+      "probability": 0.9770493,
+      "estimated": true
+    },
+    {
+      "text": "opening",
+      "start_s": 2.4743125,
+      "end_s": 2.9606875,
+      "probability": 0.9910963,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 2.9606875,
+      "end_s": 3.3745625,
+      "probability": 0.9998207,
+      "estimated": true
+    },
+    {
+      "text": "door.",
+      "start_s": 3.3745625,
+      "end_s": 4.3198125,
+      "probability": 0.79568654,
+      "estimated": true
+    },
+    {
+      "text": "A",
+      "start_s": 4.3198125,
+      "end_s": 4.8811875,
+      "probability": 0.9422349,
+      "estimated": true
+    },
+    {
+      "text": "watches",
+      "start_s": 4.8811875,
+      "end_s": 5.3750625,
+      "probability": 0.8108448,
+      "estimated": true
+    },
+    {
+      "text": "minute",
+      "start_s": 5.3750625,
+      "end_s": 5.8339375,
+      "probability": 0.9877334,
+      "estimated": true
+    },
+    {
+      "text": "hand",
+      "start_s": 5.8339375,
+      "end_s": 6.2653125,
+      "probability": 0.9399866,
+      "estimated": true
+    },
+    {
+      "text": "moves",
+      "start_s": 6.2653125,
+      "end_s": 6.8091875,
+      "probability": 0.9669012,
+      "estimated": true
+    },
+    {
+      "text": "more",
+      "start_s": 6.8091875,
+      "end_s": 7.2355625,
+      "probability": 0.9956227,
+      "estimated": true
+    },
+    {
+      "text": "quickly",
+      "start_s": 7.2355625,
+      "end_s": 7.776875,
+      "probability": 0.99281996,
+      "estimated": true
+    },
+    {
+      "text": "than",
+      "start_s": 7.776875,
+      "end_s": 8.20075,
+      "probability": 0.96112216,
+      "estimated": true
+    },
+    {
+      "text": "did",
+      "start_s": 8.20075,
+      "end_s": 8.707125,
+      "probability": 0.77489054,
+      "estimated": true
+    },
+    {
+      "text": "mine.",
+      "start_s": 8.707125,
+      "end_s": 9.714875,
+      "probability": 0.9068672,
+      "estimated": true
+    },
+    {
+      "text": "Never",
+      "start_s": 9.714875,
+      "end_s": 10.21875,
+      "probability": 0.8071569,
+      "estimated": true
+    },
+    {
+      "text": "before",
+      "start_s": 10.21875,
+      "end_s": 10.700125,
+      "probability": 0.9991973,
+      "estimated": true
+    },
+    {
+      "text": "that",
+      "start_s": 10.700125,
+      "end_s": 11.179,
+      "probability": 0.9932973,
+      "estimated": true
+    },
+    {
+      "text": "night",
+      "start_s": 11.179,
+      "end_s": 11.667875,
+      "probability": 0.99206275,
+      "estimated": true
+    },
+    {
+      "text": "had",
+      "start_s": 11.667875,
+      "end_s": 12.14675,
+      "probability": 0.90680146,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 12.14675,
+      "end_s": 12.548125,
+      "probability": 0.994575,
+      "estimated": true
+    },
+    {
+      "text": "felt",
+      "start_s": 12.548125,
+      "end_s": 13.012,
+      "probability": 0.9760044,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 13.012,
+      "end_s": 13.573375,
+      "probability": 0.9991306,
+      "estimated": true
+    },
+    {
+      "text": "extent",
+      "start_s": 13.573375,
+      "end_s": 13.97975,
+      "probability": 0.9760286,
+      "estimated": true
+    },
+    {
+      "text": "of",
+      "start_s": 13.97975,
+      "end_s": 14.573625,
+      "probability": 0.99204385,
+      "estimated": true
+    },
+    {
+      "text": "my",
+      "start_s": 14.573625,
+      "end_s": 14.9475,
+      "probability": 0.9989553,
+      "estimated": true
+    },
+    {
+      "text": "own",
+      "start_s": 14.9475,
+      "end_s": 15.4638125,
+      "probability": 0.9985248,
+      "estimated": true
+    },
+    {
+      "text": "powers",
+      "start_s": 15.4638125,
+      "end_s": 15.9651875,
+      "probability": 0.99133265,
+      "estimated": true
+    },
+    {
+      "text": "of",
+      "start_s": 15.9651875,
+      "end_s": 16.4990625,
+      "probability": 0.81299734,
+      "estimated": true
+    },
+    {
+      "text": "my",
+      "start_s": 16.4990625,
+      "end_s": 16.9804375,
+      "probability": 0.9971773,
+      "estimated": true
+    },
+    {
+      "text": "sagacity.",
+      "start_s": 16.9804375,
+      "end_s": 18.3320625,
+      "probability": 0.3061376,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 18.3320625,
+      "end_s": 18.8834375,
+      "probability": 0.99571764,
+      "estimated": true
+    },
+    {
+      "text": "could",
+      "start_s": 18.8834375,
+      "end_s": 19.3348125,
+      "probability": 0.77186215,
+      "estimated": true
+    },
+    {
+      "text": "scarcely",
+      "start_s": 19.3348125,
+      "end_s": 20.3575625,
+      "probability": 0.9802459,
+      "estimated": true
+    },
+    {
+      "text": "contain",
+      "start_s": 20.3575625,
+      "end_s": 20.8639375,
+      "probability": 0.98680127,
+      "estimated": true
+    },
+    {
+      "text": "my",
+      "start_s": 20.8639375,
+      "end_s": 21.2978125,
+      "probability": 0.9976377,
+      "estimated": true
+    },
+    {
+      "text": "feelings",
+      "start_s": 21.2978125,
+      "end_s": 21.7566875,
+      "probability": 0.9920476,
+      "estimated": true
+    },
+    {
+      "text": "of",
+      "start_s": 21.7566875,
+      "end_s": 22.2680625,
+      "probability": 0.99946606,
+      "estimated": true
+    },
+    {
+      "text": "triumph",
+      "start_s": 22.2680625,
+      "end_s": 22.799375,
+      "probability": 0.9987905,
+      "estimated": true
+    },
+    {
+      "text": "to",
+      "start_s": 22.799375,
+      "end_s": 23.16825,
+      "probability": 0.49355948,
+      "estimated": true
+    },
+    {
+      "text": "think",
+      "start_s": 23.16825,
+      "end_s": 23.764625,
+      "probability": 0.9956987,
+      "estimated": true
+    },
+    {
+      "text": "that",
+      "start_s": 23.764625,
+      "end_s": 24.236,
+      "probability": 0.9987953,
+      "estimated": true
+    },
+    {
+      "text": "there",
+      "start_s": 24.236,
+      "end_s": 24.724875,
+      "probability": 0.9901799,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 24.724875,
+      "end_s": 25.20125,
+      "probability": 0.9974436,
+      "estimated": true
+    },
+    {
+      "text": "was",
+      "start_s": 25.20125,
+      "end_s": 25.652625,
+      "probability": 0.9996949,
+      "estimated": true
+    },
+    {
+      "text": "opening",
+      "start_s": 25.652625,
+      "end_s": 26.174,
+      "probability": 0.956426,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 26.174,
+      "end_s": 26.632875,
+      "probability": 0.99945843,
+      "estimated": true
+    },
+    {
+      "text": "door,",
+      "start_s": 26.632875,
+      "end_s": 27.593125,
+      "probability": 0.5813966,
+      "estimated": true
+    },
+    {
+      "text": "little",
+      "start_s": 27.593125,
+      "end_s": 28.117,
+      "probability": 0.7731787,
+      "estimated": true
+    },
+    {
+      "text": "by",
+      "start_s": 28.117,
+      "end_s": 28.590875,
+      "probability": 0.99920875,
+      "estimated": true
+    },
+    {
+      "text": "little",
+      "start_s": 28.590875,
+      "end_s": 28.99725,
+      "probability": 0.9891078,
+      "estimated": true
+    },
+    {
+      "text": "and[_EOT_]",
+      "start_s": 28.99725,
+      "end_s": 30.0525,
+      "probability": 0.3376167,
+      "estimated": true
+    },
+    {
+      "text": "[_BEG_]And",
+      "start_s": 30.0525,
+      "end_s": 30.1391875,
+      "probability": 0.74919826,
+      "estimated": true
+    },
+    {
+      "text": "he",
+      "start_s": 30.1391875,
+      "end_s": 30.5013125,
+      "probability": 0.9956417,
+      "estimated": true
+    },
+    {
+      "text": "not",
+      "start_s": 30.5013125,
+      "end_s": 30.9934375,
+      "probability": 0.98054606,
+      "estimated": true
+    },
+    {
+      "text": "even",
+      "start_s": 30.9934375,
+      "end_s": 31.3255625,
+      "probability": 0.99975586,
+      "estimated": true
+    },
+    {
+      "text": "dreaming",
+      "start_s": 31.3255625,
+      "end_s": 31.7126875,
+      "probability": 0.9788456,
+      "estimated": true
+    },
+    {
+      "text": "of",
+      "start_s": 31.7126875,
+      "end_s": 32.11475,
+      "probability": 0.99914205,
+      "estimated": true
+    },
+    {
+      "text": "my",
+      "start_s": 32.11475,
+      "end_s": 32.531875,
+      "probability": 0.99658406,
+      "estimated": true
+    },
+    {
+      "text": "secret",
+      "start_s": 32.531875,
+      "end_s": 32.9015,
+      "probability": 0.99725145,
+      "estimated": true
+    },
+    {
+      "text": "deeds",
+      "start_s": 32.9015,
+      "end_s": 33.278625,
+      "probability": 0.7631768,
+      "estimated": true
+    },
+    {
+      "text": "or",
+      "start_s": 33.278625,
+      "end_s": 33.61825,
+      "probability": 0.94745296,
+      "estimated": true
+    },
+    {
+      "text": "thoughts.",
+      "start_s": 33.61825,
+      "end_s": 34.3675,
+      "probability": 0.57830757,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 34.3675,
+      "end_s": 34.7270625,
+      "probability": 0.94882196,
+      "estimated": true
+    },
+    {
+      "text": "have",
+      "start_s": 34.7270625,
+      "end_s": 35.2191875,
+      "probability": 0.5735916,
+      "estimated": true
+    },
+    {
+      "text": "fairly",
+      "start_s": 35.2191875,
+      "end_s": 35.5763125,
+      "probability": 0.9422115,
+      "estimated": true
+    },
+    {
+      "text": "chuckled",
+      "start_s": 35.5763125,
+      "end_s": 36.3405625,
+      "probability": 0.7854212,
+      "estimated": true
+    },
+    {
+      "text": "at",
+      "start_s": 36.3405625,
+      "end_s": 36.7526875,
+      "probability": 0.98943985,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 36.7526875,
+      "end_s": 37.12475,
+      "probability": 0.9988905,
+      "estimated": true
+    },
+    {
+      "text": "idea",
+      "start_s": 37.12475,
+      "end_s": 37.439375,
+      "probability": 0.9958943,
+      "estimated": true
+    },
+    {
+      "text": "and",
+      "start_s": 37.439375,
+      "end_s": 37.9115,
+      "probability": 0.7619797,
+      "estimated": true
+    },
+    {
+      "text": "perhaps",
+      "start_s": 37.9115,
+      "end_s": 38.301125,
+      "probability": 0.99225956,
+      "estimated": true
+    },
+    {
+      "text": "he",
+      "start_s": 38.301125,
+      "end_s": 38.57825,
+      "probability": 0.993248,
+      "estimated": true
+    },
+    {
+      "text": "hurt",
+      "start_s": 38.57825,
+      "end_s": 39.025375,
+      "probability": 0.8968833,
+      "estimated": true
+    },
+    {
+      "text": "me.",
+      "start_s": 39.025375,
+      "end_s": 39.8195625,
+      "probability": 0.945478,
+      "estimated": true
+    },
+    {
+      "text": "For",
+      "start_s": 39.8195625,
+      "end_s": 40.2191875,
+      "probability": 0.7882005,
+      "estimated": true
+    },
+    {
+      "text": "he",
+      "start_s": 40.2191875,
+      "end_s": 40.5613125,
+      "probability": 0.9988639,
+      "estimated": true
+    },
+    {
+      "text": "moved",
+      "start_s": 40.5613125,
+      "end_s": 40.8859375,
+      "probability": 0.9773792,
+      "estimated": true
+    },
+    {
+      "text": "on",
+      "start_s": 40.8859375,
+      "end_s": 41.3705625,
+      "probability": 0.99240345,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 41.3705625,
+      "end_s": 41.7576875,
+      "probability": 0.9993212,
+      "estimated": true
+    },
+    {
+      "text": "bed",
+      "start_s": 41.7576875,
+      "end_s": 42.11725,
+      "probability": 0.9905086,
+      "estimated": true
+    },
+    {
+      "text": "suddenly",
+      "start_s": 42.11725,
+      "end_s": 42.509375,
+      "probability": 0.9922785,
+      "estimated": true
+    },
+    {
+      "text": "as",
+      "start_s": 42.509375,
+      "end_s": 42.8715,
+      "probability": 0.9891757,
+      "estimated": true
+    },
+    {
+      "text": "if",
+      "start_s": 42.8715,
+      "end_s": 43.303625,
+      "probability": 0.9177916,
+      "estimated": true
+    },
+    {
+      "text": "startled.",
+      "start_s": 43.303625,
+      "end_s": 44.045375,
+      "probability": 0.9740368,
+      "estimated": true
+    },
+    {
+      "text": "Now",
+      "start_s": 44.045375,
+      "end_s": 44.395,
+      "probability": 0.9155851,
+      "estimated": true
+    },
+    {
+      "text": "you",
+      "start_s": 44.395,
+      "end_s": 44.7370625,
+      "probability": 0.9914083,
+      "estimated": true
+    },
+    {
+      "text": "may",
+      "start_s": 44.7370625,
+      "end_s": 45.1116875,
+      "probability": 0.997847,
+      "estimated": true
+    },
+    {
+      "text": "think",
+      "start_s": 45.1116875,
+      "end_s": 45.5438125,
+      "probability": 0.99866575,
+      "estimated": true
+    },
+    {
+      "text": "that",
+      "start_s": 45.5438125,
+      "end_s": 45.8809375,
+      "probability": 0.9878596,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 45.8809375,
+      "end_s": 46.3330625,
+      "probability": 0.9972648,
+      "estimated": true
+    },
+    {
+      "text": "drew",
+      "start_s": 46.3330625,
+      "end_s": 46.7226875,
+      "probability": 0.9057626,
+      "estimated": true
+    },
+    {
+      "text": "back",
+      "start_s": 46.7226875,
+      "end_s": 47.13725,
+      "probability": 0.99775183,
+      "estimated": true
+    },
+    {
+      "text": "but",
+      "start_s": 47.13725,
+      "end_s": 47.451875,
+      "probability": 0.7775451,
+      "estimated": true
+    },
+    {
+      "text": "know",
+      "start_s": 47.451875,
+      "end_s": 47.9065,
+      "probability": 0.56021565,
+      "estimated": true
+    },
+    {
+      "text": "his",
+      "start_s": 47.9065,
+      "end_s": 48.296125,
+      "probability": 0.60826147,
+      "estimated": true
+    },
+    {
+      "text": "room",
+      "start_s": 48.296125,
+      "end_s": 48.63825,
+      "probability": 0.9978794,
+      "estimated": true
+    },
+    {
+      "text": "was",
+      "start_s": 48.63825,
+      "end_s": 49.072875,
+      "probability": 0.9996262,
+      "estimated": true
+    },
+    {
+      "text": "as",
+      "start_s": 49.072875,
+      "end_s": 49.4575,
+      "probability": 0.9883497,
+      "estimated": true
+    },
+    {
+      "text": "black",
+      "start_s": 49.4575,
+      "end_s": 49.7995625,
+      "probability": 0.99900293,
+      "estimated": true
+    },
+    {
+      "text": "as",
+      "start_s": 49.7995625,
+      "end_s": 50.1791875,
+      "probability": 0.9895833,
+      "estimated": true
+    },
+    {
+      "text": "pitch",
+      "start_s": 50.1791875,
+      "end_s": 50.5663125,
+      "probability": 0.98481005,
+      "estimated": true
+    },
+    {
+      "text": "with",
+      "start_s": 50.5663125,
+      "end_s": 50.9884375,
+      "probability": 0.9302909,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 50.9884375,
+      "end_s": 51.3605625,
+      "probability": 0.9907958,
+      "estimated": true
+    },
+    {
+      "text": "thick",
+      "start_s": 51.3605625,
+      "end_s": 51.7201875,
+      "probability": 0.9372949,
+      "estimated": true
+    },
+    {
+      "text": "darkness",
+      "start_s": 51.7201875,
+      "end_s": 52.03975,
+      "probability": 0.99510443,
+      "estimated": true
+    },
+    {
+      "text": "for",
+      "start_s": 52.03975,
+      "end_s": 52.531875,
+      "probability": 0.98738116,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 52.531875,
+      "end_s": 52.914,
+      "probability": 0.9953683,
+      "estimated": true
+    },
+    {
+      "text": "shutters",
+      "start_s": 52.914,
+      "end_s": 53.58575,
+      "probability": 0.96484613,
+      "estimated": true
+    },
+    {
+      "text": "were",
+      "start_s": 53.58575,
+      "end_s": 53.967875,
+      "probability": 0.81750053,
+      "estimated": true
+    },
+    {
+      "text": "closed",
+      "start_s": 53.967875,
+      "end_s": 54.3775,
+      "probability": 0.7623162,
+      "estimated": true
+    },
+    {
+      "text": "fastened",
+      "start_s": 54.3775,
+      "end_s": 55.1366875,
+      "probability": 0.3803667,
+      "estimated": true
+    },
+    {
+      "text": "through",
+      "start_s": 55.1366875,
+      "end_s": 55.6013125,
+      "probability": 0.9828116,
+      "estimated": true
+    },
+    {
+      "text": "fear",
+      "start_s": 55.6013125,
+      "end_s": 55.9284375,
+      "probability": 0.99691296,
+      "estimated": true
+    },
+    {
+      "text": "of",
+      "start_s": 55.9284375,
+      "end_s": 56.2730625,
+      "probability": 0.9997978,
+      "estimated": true
+    },
+    {
+      "text": "robbers",
+      "start_s": 56.2730625,
+      "end_s": 57.03725,
+      "probability": 0.90874934,
+      "estimated": true
+    },
+    {
+      "text": "and",
+      "start_s": 57.03725,
+      "end_s": 57.444375,
+      "probability": 0.6702346,
+      "estimated": true
+    },
+    {
+      "text": "so",
+      "start_s": 57.444375,
+      "end_s": 57.8365,
+      "probability": 0.9736096,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 57.8365,
+      "end_s": 58.281125,
+      "probability": 0.9780431,
+      "estimated": true
+    },
+    {
+      "text": "knew.[_EOT_]",
+      "start_s": 58.281125,
+      "end_s": 59.345,
+      "probability": 0.6354132,
+      "estimated": true
+    },
+    {
+      "text": "[_BEG_]So",
+      "start_s": 59.345,
+      "end_s": 59.60575,
+      "probability": 0.54114294,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 59.60575,
+      "end_s": 60.0561875,
+      "probability": 0.9378698,
+      "estimated": true
+    },
+    {
+      "text": "knew",
+      "start_s": 60.0561875,
+      "end_s": 60.3665625,
+      "probability": 0.99618876,
+      "estimated": true
+    },
+    {
+      "text": "that",
+      "start_s": 60.3665625,
+      "end_s": 60.8795,
+      "probability": 0.99647003,
+      "estimated": true
+    },
+    {
+      "text": "he",
+      "start_s": 60.8795,
+      "end_s": 61.222375,
+      "probability": 0.99889815,
+      "estimated": true
+    },
+    {
+      "text": "could",
+      "start_s": 61.222375,
+      "end_s": 61.6853125,
+      "probability": 0.86120915,
+      "estimated": true
+    },
+    {
+      "text": "not",
+      "start_s": 61.6853125,
+      "end_s": 61.9881875,
+      "probability": 0.9996758,
+      "estimated": true
+    },
+    {
+      "text": "see",
+      "start_s": 61.9881875,
+      "end_s": 62.416125,
+      "probability": 0.99862957,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 62.416125,
+      "end_s": 62.8065,
+      "probability": 0.99920684,
+      "estimated": true
+    },
+    {
+      "text": "opening",
+      "start_s": 62.8065,
+      "end_s": 63.3169375,
+      "probability": 0.9996014,
+      "estimated": true
+    },
+    {
+      "text": "of",
+      "start_s": 63.3169375,
+      "end_s": 63.6473125,
+      "probability": 0.99907345,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 63.6473125,
+      "end_s": 64.12275,
+      "probability": 0.9994775,
+      "estimated": true
+    },
+    {
+      "text": "door,",
+      "start_s": 64.12275,
+      "end_s": 64.8610625,
+      "probability": 0.533944,
+      "estimated": true
+    },
+    {
+      "text": "and",
+      "start_s": 64.8610625,
+      "end_s": 65.3239375,
+      "probability": 0.991136,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 65.3239375,
+      "end_s": 65.706875,
+      "probability": 0.9993479,
+      "estimated": true
+    },
+    {
+      "text": "kept",
+      "start_s": 65.706875,
+      "end_s": 66.13475,
+      "probability": 0.99936694,
+      "estimated": true
+    },
+    {
+      "text": "pushing",
+      "start_s": 66.13475,
+      "end_s": 66.5551875,
+      "probability": 0.91879874,
+      "estimated": true
+    },
+    {
+      "text": "it",
+      "start_s": 66.5551875,
+      "end_s": 66.8580625,
+      "probability": 0.9947192,
+      "estimated": true
+    },
+    {
+      "text": "on,",
+      "start_s": 66.8580625,
+      "end_s": 67.686375,
+      "probability": 0.6942471,
+      "estimated": true
+    },
+    {
+      "text": "steadily,",
+      "start_s": 67.686375,
+      "end_s": 68.5571875,
+      "probability": 0.7930109,
+      "estimated": true
+    },
+    {
+      "text": "steadily.",
+      "start_s": 68.5571875,
+      "end_s": 69.333,
+      "probability": 0.89643866,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 69.333,
+      "end_s": 69.6884375,
+      "probability": 0.78650504,
+      "estimated": true
+    },
+    {
+      "text": "had",
+      "start_s": 69.6884375,
+      "end_s": 70.1013125,
+      "probability": 0.9562746,
+      "estimated": true
+    },
+    {
+      "text": "my",
+      "start_s": 70.1013125,
+      "end_s": 70.61425,
+      "probability": 0.9992183,
+      "estimated": true
+    },
+    {
+      "text": "head",
+      "start_s": 70.61425,
+      "end_s": 71.019625,
+      "probability": 0.9651581,
+      "estimated": true
+    },
+    {
+      "text": "in",
+      "start_s": 71.019625,
+      "end_s": 71.4200625,
+      "probability": 0.9991916,
+      "estimated": true
+    },
+    {
+      "text": "and",
+      "start_s": 71.4200625,
+      "end_s": 71.7154375,
+      "probability": 0.7359487,
+      "estimated": true
+    },
+    {
+      "text": "was",
+      "start_s": 71.7154375,
+      "end_s": 72.190875,
+      "probability": 0.99746644,
+      "estimated": true
+    },
+    {
+      "text": "about",
+      "start_s": 72.190875,
+      "end_s": 72.62375,
+      "probability": 0.9996224,
+      "estimated": true
+    },
+    {
+      "text": "to",
+      "start_s": 72.62375,
+      "end_s": 72.9591875,
+      "probability": 0.9939492,
+      "estimated": true
+    },
+    {
+      "text": "open",
+      "start_s": 72.9591875,
+      "end_s": 73.3895625,
+      "probability": 0.99898964,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 73.3895625,
+      "end_s": 73.85,
+      "probability": 0.9908071,
+      "estimated": true
+    },
+    {
+      "text": "lantern",
+      "start_s": 73.85,
+      "end_s": 74.150375,
+      "probability": 0.9755633,
+      "estimated": true
+    },
+    {
+      "text": "when",
+      "start_s": 74.150375,
+      "end_s": 74.66575,
+      "probability": 0.5809587,
+      "estimated": true
+    },
+    {
+      "text": "my",
+      "start_s": 74.66575,
+      "end_s": 74.9661875,
+      "probability": 0.99937075,
+      "estimated": true
+    },
+    {
+      "text": "thumb",
+      "start_s": 74.9661875,
+      "end_s": 75.4690625,
+      "probability": 0.8759366,
+      "estimated": true
+    },
+    {
+      "text": "slipped",
+      "start_s": 75.4690625,
+      "end_s": 75.882,
+      "probability": 0.992676,
+      "estimated": true
+    },
+    {
+      "text": "upon",
+      "start_s": 75.882,
+      "end_s": 76.282375,
+      "probability": 0.9906786,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 76.282375,
+      "end_s": 76.6053125,
+      "probability": 0.9973637,
+      "estimated": true
+    },
+    {
+      "text": "tin",
+      "start_s": 76.6053125,
+      "end_s": 77.0656875,
+      "probability": 0.6919271,
+      "estimated": true
+    },
+    {
+      "text": "fascinating,",
+      "start_s": 77.0656875,
+      "end_s": 77.904,
+      "probability": 0.5290532,
+      "estimated": true
+    },
+    {
+      "text": "and",
+      "start_s": 77.904,
+      "end_s": 78.2219375,
+      "probability": 0.9885721,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 78.2219375,
+      "end_s": 78.6123125,
+      "probability": 0.99939364,
+      "estimated": true
+    },
+    {
+      "text": "old",
+      "start_s": 78.6123125,
+      "end_s": 79.01275,
+      "probability": 0.99628186,
+      "estimated": true
+    },
+    {
+      "text": "man",
+      "start_s": 79.01275,
+      "end_s": 79.513125,
+      "probability": 0.9962135,
+      "estimated": true
+    },
+    {
+      "text": "sprang",
+      "start_s": 79.513125,
+      "end_s": 80.2289375,
+      "probability": 0.6754894,
+      "estimated": true
+    },
+    {
+      "text": "up",
+      "start_s": 80.2289375,
+      "end_s": 80.651875,
+      "probability": 0.9969567,
+      "estimated": true
+    },
+    {
+      "text": "in",
+      "start_s": 80.651875,
+      "end_s": 81.10975,
+      "probability": 0.99960715,
+      "estimated": true
+    },
+    {
+      "text": "bed",
+      "start_s": 81.10975,
+      "end_s": 81.4751875,
+      "probability": 0.99597216,
+      "estimated": true
+    },
+    {
+      "text": "crying",
+      "start_s": 81.4751875,
+      "end_s": 81.9630625,
+      "probability": 0.9962591,
+      "estimated": true
+    },
+    {
+      "text": "out,",
+      "start_s": 81.9630625,
+      "end_s": 82.751375,
+      "probability": 0.94294596,
+      "estimated": true
+    },
+    {
+      "text": "'Who's",
+      "start_s": 82.751375,
+      "end_s": 83.952625,
+      "probability": 0.23717088,
+      "estimated": true
+    },
+    {
+      "text": "there?'",
+      "start_s": 83.952625,
+      "end_s": 84.6934375,
+      "probability": 0.82966816,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 84.6934375,
+      "end_s": 85.1013125,
+      "probability": 0.9630838,
+      "estimated": true
+    },
+    {
+      "text": "kept",
+      "start_s": 85.1013125,
+      "end_s": 85.61425,
+      "probability": 0.9926893,
+      "estimated": true
+    },
+    {
+      "text": "quite",
+      "start_s": 85.61425,
+      "end_s": 85.977125,
+      "probability": 0.88099676,
+      "estimated": true
+    },
+    {
+      "text": "still,",
+      "start_s": 85.977125,
+      "end_s": 86.7604375,
+      "probability": 0.49849427,
+      "estimated": true
+    },
+    {
+      "text": "and",
+      "start_s": 86.7604375,
+      "end_s": 87.225875,
+      "probability": 0.9783715,
+      "estimated": true
+    },
+    {
+      "text": "said",
+      "start_s": 87.225875,
+      "end_s": 87.59375,
+      "probability": 0.9840571,
+      "estimated": true
+    },
+    {
+      "text": "nothing.[_EOT_]",
+      "start_s": 87.59375,
+      "end_s": 88.8575,
+      "probability": 0.9624944,
+      "estimated": true
+    },
+    {
+      "text": "[_BEG_]I",
+      "start_s": 88.8575,
+      "end_s": 89.310125,
+      "probability": 0.18539236,
+      "estimated": true
+    },
+    {
+      "text": "said",
+      "start_s": 89.310125,
+      "end_s": 89.8039375,
+      "probability": 0.9534262,
+      "estimated": true
+    },
+    {
+      "text": "nothing.",
+      "start_s": 89.8039375,
+      "end_s": 90.7765625,
+      "probability": 0.92183375,
+      "estimated": true
+    },
+    {
+      "text": "For",
+      "start_s": 90.7765625,
+      "end_s": 91.412875,
+      "probability": 0.8934574,
+      "estimated": true
+    },
+    {
+      "text": "a",
+      "start_s": 91.412875,
+      "end_s": 91.9316875,
+      "probability": 0.99810207,
+      "estimated": true
+    },
+    {
+      "text": "whole",
+      "start_s": 91.9316875,
+      "end_s": 92.448,
+      "probability": 0.99732184,
+      "estimated": true
+    },
+    {
+      "text": "hour",
+      "start_s": 92.448,
+      "end_s": 92.9943125,
+      "probability": 0.9999466,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 92.9943125,
+      "end_s": 93.428125,
+      "probability": 0.8144407,
+      "estimated": true
+    },
+    {
+      "text": "did",
+      "start_s": 93.428125,
+      "end_s": 94.0319375,
+      "probability": 0.9867034,
+      "estimated": true
+    },
+    {
+      "text": "not",
+      "start_s": 94.0319375,
+      "end_s": 94.47075,
+      "probability": 0.9993593,
+      "estimated": true
+    },
+    {
+      "text": "move",
+      "start_s": 94.47075,
+      "end_s": 95.0795625,
+      "probability": 0.9961926,
+      "estimated": true
+    },
+    {
+      "text": "a",
+      "start_s": 95.0795625,
+      "end_s": 95.600875,
+      "probability": 0.99347913,
+      "estimated": true
+    },
+    {
+      "text": "muscle,",
+      "start_s": 95.600875,
+      "end_s": 96.5785,
+      "probability": 0.5346757,
+      "estimated": true
+    },
+    {
+      "text": "and",
+      "start_s": 96.5785,
+      "end_s": 97.1998125,
+      "probability": 0.9951936,
+      "estimated": true
+    },
+    {
+      "text": "in",
+      "start_s": 97.1998125,
+      "end_s": 97.636125,
+      "probability": 0.998761,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 97.636125,
+      "end_s": 98.2475,
+      "probability": 0.99874955,
+      "estimated": true
+    },
+    {
+      "text": "meantime",
+      "start_s": 98.2475,
+      "end_s": 98.7463125,
+      "probability": 0.95281357,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 98.7463125,
+      "end_s": 99.280125,
+      "probability": 0.94053537,
+      "estimated": true
+    },
+    {
+      "text": "did",
+      "start_s": 99.280125,
+      "end_s": 99.8239375,
+      "probability": 0.9573568,
+      "estimated": true
+    },
+    {
+      "text": "not",
+      "start_s": 99.8239375,
+      "end_s": 100.27525,
+      "probability": 0.9992488,
+      "estimated": true
+    },
+    {
+      "text": "hear",
+      "start_s": 100.27525,
+      "end_s": 100.8540625,
+      "probability": 0.9972305,
+      "estimated": true
+    },
+    {
+      "text": "him",
+      "start_s": 100.8540625,
+      "end_s": 101.340375,
+      "probability": 0.9874443,
+      "estimated": true
+    },
+    {
+      "text": "lie",
+      "start_s": 101.340375,
+      "end_s": 101.9241875,
+      "probability": 0.9818542,
+      "estimated": true
+    },
+    {
+      "text": "down.",
+      "start_s": 101.9241875,
+      "end_s": 102.9893125,
+      "probability": 0.9919644,
+      "estimated": true
+    },
+    {
+      "text": "He",
+      "start_s": 102.9893125,
+      "end_s": 103.503125,
+      "probability": 0.8978641,
+      "estimated": true
+    },
+    {
+      "text": "was",
+      "start_s": 103.503125,
+      "end_s": 103.9569375,
+      "probability": 0.99723816,
+      "estimated": true
+    },
+    {
+      "text": "sitting",
+      "start_s": 103.9569375,
+      "end_s": 104.54825,
+      "probability": 0.99455607,
+      "estimated": true
+    },
+    {
+      "text": "up",
+      "start_s": 104.54825,
+      "end_s": 105.0295625,
+      "probability": 0.99819344,
+      "estimated": true
+    },
+    {
+      "text": "in",
+      "start_s": 105.0295625,
+      "end_s": 105.520875,
+      "probability": 0.99661446,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 105.520875,
+      "end_s": 106.1471875,
+      "probability": 0.9949431,
+      "estimated": true
+    },
+    {
+      "text": "bed",
+      "start_s": 106.1471875,
+      "end_s": 106.5685,
+      "probability": 0.86343616,
+      "estimated": true
+    },
+    {
+      "text": "listening",
+      "start_s": 106.5685,
+      "end_s": 107.1173125,
+      "probability": 0.9709466,
+      "estimated": true
+    },
+    {
+      "text": "just",
+      "start_s": 107.1173125,
+      "end_s": 107.701125,
+      "probability": 0.9688229,
+      "estimated": true
+    },
+    {
+      "text": "as",
+      "start_s": 107.701125,
+      "end_s": 108.1475,
+      "probability": 0.9985248,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 108.1475,
+      "end_s": 108.6913125,
+      "probability": 0.99941653,
+      "estimated": true
+    },
+    {
+      "text": "have",
+      "start_s": 108.6913125,
+      "end_s": 109.302625,
+      "probability": 0.9696474,
+      "estimated": true
+    },
+    {
+      "text": "done",
+      "start_s": 109.302625,
+      "end_s": 109.8339375,
+      "probability": 0.9955506,
+      "estimated": true
+    },
+    {
+      "text": "night",
+      "start_s": 109.8339375,
+      "end_s": 110.34275,
+      "probability": 0.97215855,
+      "estimated": true
+    },
+    {
+      "text": "after",
+      "start_s": 110.34275,
+      "end_s": 110.8165625,
+      "probability": 0.967844,
+      "estimated": true
+    },
+    {
+      "text": "night,",
+      "start_s": 110.8165625,
+      "end_s": 111.8666875,
+      "probability": 0.66549087,
+      "estimated": true
+    },
+    {
+      "text": "harkening",
+      "start_s": 111.8666875,
+      "end_s": 113.518125,
+      "probability": 0.19069506,
+      "estimated": true
+    },
+    {
+      "text": "to",
+      "start_s": 113.518125,
+      "end_s": 114.0094375,
+      "probability": 0.9987686,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 114.0094375,
+      "end_s": 114.55075,
+      "probability": 0.99930215,
+      "estimated": true
+    },
+    {
+      "text": "death",
+      "start_s": 114.55075,
+      "end_s": 115.0445625,
+      "probability": 0.7332641,
+      "estimated": true
+    },
+    {
+      "text": "watches",
+      "start_s": 115.0445625,
+      "end_s": 115.538375,
+      "probability": 0.98107356,
+      "estimated": true
+    },
+    {
+      "text": "in",
+      "start_s": 115.538375,
+      "end_s": 116.1346875,
+      "probability": 0.9987267,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 116.1346875,
+      "end_s": 116.6635,
+      "probability": 0.9957557,
+      "estimated": true
+    },
+    {
+      "text": "wall.[_EOT_]",
+      "start_s": 116.6635,
+      "end_s": 118.215,
+      "probability": 0.29738703,
+      "estimated": true
+    },
+    {
+      "text": "[_BEG_]And",
+      "start_s": 118.215,
+      "end_s": 118.250875,
+      "probability": 0.854398,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 118.250875,
+      "end_s": 118.6988125,
+      "probability": 0.99871147,
+      "estimated": true
+    },
+    {
+      "text": "knew",
+      "start_s": 118.6988125,
+      "end_s": 119.01425,
+      "probability": 0.99461293,
+      "estimated": true
+    },
+    {
+      "text": "it",
+      "start_s": 119.01425,
+      "end_s": 119.3146875,
+      "probability": 0.99380136,
+      "estimated": true
+    },
+    {
+      "text": "was",
+      "start_s": 119.3146875,
+      "end_s": 119.752625,
+      "probability": 0.99983597,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 119.752625,
+      "end_s": 120.1280625,
+      "probability": 0.99613935,
+      "estimated": true
+    },
+    {
+      "text": "groan",
+      "start_s": 120.1280625,
+      "end_s": 120.8214375,
+      "probability": 0.47697118,
+      "estimated": true
+    },
+    {
+      "text": "of",
+      "start_s": 120.8214375,
+      "end_s": 121.186875,
+      "probability": 0.99769855,
+      "estimated": true
+    },
+    {
+      "text": "mortal",
+      "start_s": 121.186875,
+      "end_s": 121.4248125,
+      "probability": 0.9849754,
+      "estimated": true
+    },
+    {
+      "text": "terror.",
+      "start_s": 121.4248125,
+      "end_s": 122.1781875,
+      "probability": 0.80993897,
+      "estimated": true
+    },
+    {
+      "text": "It",
+      "start_s": 122.1781875,
+      "end_s": 122.568625,
+      "probability": 0.95753396,
+      "estimated": true
+    },
+    {
+      "text": "was",
+      "start_s": 122.568625,
+      "end_s": 122.9365625,
+      "probability": 0.99759585,
+      "estimated": true
+    },
+    {
+      "text": "not",
+      "start_s": 122.9365625,
+      "end_s": 123.2745,
+      "probability": 0.99988556,
+      "estimated": true
+    },
+    {
+      "text": "a",
+      "start_s": 123.2745,
+      "end_s": 123.56,
+      "probability": 0.9984258,
+      "estimated": true
+    },
+    {
+      "text": "groan",
+      "start_s": 123.56,
+      "end_s": 124.348375,
+      "probability": 0.98851365,
+      "estimated": true
+    },
+    {
+      "text": "of",
+      "start_s": 124.348375,
+      "end_s": 124.6013125,
+      "probability": 0.9993822,
+      "estimated": true
+    },
+    {
+      "text": "pain",
+      "start_s": 124.6013125,
+      "end_s": 124.96425,
+      "probability": 0.99728763,
+      "estimated": true
+    },
+    {
+      "text": "or",
+      "start_s": 124.96425,
+      "end_s": 125.3846875,
+      "probability": 0.9145449,
+      "estimated": true
+    },
+    {
+      "text": "of",
+      "start_s": 125.3846875,
+      "end_s": 125.775125,
+      "probability": 0.7907875,
+      "estimated": true
+    },
+    {
+      "text": "grief.",
+      "start_s": 125.775125,
+      "end_s": 126.4635,
+      "probability": 0.80977523,
+      "estimated": true
+    },
+    {
+      "text": "Oh",
+      "start_s": 126.4635,
+      "end_s": 126.8114375,
+      "probability": 0.84398663,
+      "estimated": true
+    },
+    {
+      "text": "no,",
+      "start_s": 126.8114375,
+      "end_s": 127.5398125,
+      "probability": 0.6901477,
+      "estimated": true
+    },
+    {
+      "text": "it",
+      "start_s": 127.5398125,
+      "end_s": 127.81025,
+      "probability": 0.98145163,
+      "estimated": true
+    },
+    {
+      "text": "was",
+      "start_s": 127.81025,
+      "end_s": 128.2381875,
+      "probability": 0.9993898,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 128.2381875,
+      "end_s": 128.561125,
+      "probability": 0.9945826,
+      "estimated": true
+    },
+    {
+      "text": "lowest-difold",
+      "start_s": 128.561125,
+      "end_s": 130.303375,
+      "probability": 0.06648501,
+      "estimated": true
+    },
+    {
+      "text": "sound",
+      "start_s": 130.303375,
+      "end_s": 130.6363125,
+      "probability": 0.9822775,
+      "estimated": true
+    },
+    {
+      "text": "that",
+      "start_s": 130.6363125,
+      "end_s": 130.95425,
+      "probability": 0.99301124,
+      "estimated": true
+    },
+    {
+      "text": "arises",
+      "start_s": 130.95425,
+      "end_s": 131.3246875,
+      "probability": 0.95772207,
+      "estimated": true
+    },
+    {
+      "text": "from",
+      "start_s": 131.3246875,
+      "end_s": 131.772625,
+      "probability": 0.99612796,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 131.772625,
+      "end_s": 132.0405625,
+      "probability": 0.9875695,
+      "estimated": true
+    },
+    {
+      "text": "bottom",
+      "start_s": 132.0405625,
+      "end_s": 132.4435,
+      "probability": 0.9902498,
+      "estimated": true
+    },
+    {
+      "text": "of",
+      "start_s": 132.4435,
+      "end_s": 132.7389375,
+      "probability": 0.99945843,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 132.7389375,
+      "end_s": 133.164375,
+      "probability": 0.9925851,
+      "estimated": true
+    },
+    {
+      "text": "soul",
+      "start_s": 133.164375,
+      "end_s": 133.5123125,
+      "probability": 0.99519455,
+      "estimated": true
+    },
+    {
+      "text": "when",
+      "start_s": 133.5123125,
+      "end_s": 133.88275,
+      "probability": 0.9641811,
+      "estimated": true
+    },
+    {
+      "text": "overcharged",
+      "start_s": 133.88275,
+      "end_s": 134.483625,
+      "probability": 0.9193816,
+      "estimated": true
+    },
+    {
+      "text": "with",
+      "start_s": 134.483625,
+      "end_s": 134.9090625,
+      "probability": 0.99712783,
+      "estimated": true
+    },
+    {
+      "text": "aw.",
+      "start_s": 134.9090625,
+      "end_s": 135.62,
+      "probability": 0.39742178,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 135.62,
+      "end_s": 135.9129375,
+      "probability": 0.99454844,
+      "estimated": true
+    },
+    {
+      "text": "knew",
+      "start_s": 135.9129375,
+      "end_s": 136.253375,
+      "probability": 0.98505616,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 136.253375,
+      "end_s": 136.6263125,
+      "probability": 0.99833053,
+      "estimated": true
+    },
+    {
+      "text": "sound",
+      "start_s": 136.6263125,
+      "end_s": 137.02675,
+      "probability": 0.9976377,
+      "estimated": true
+    },
+    {
+      "text": "well.",
+      "start_s": 137.02675,
+      "end_s": 137.767625,
+      "probability": 0.76920205,
+      "estimated": true
+    },
+    {
+      "text": "Many",
+      "start_s": 137.767625,
+      "end_s": 138.1205625,
+      "probability": 0.28194624,
+      "estimated": true
+    },
+    {
+      "text": "a",
+      "start_s": 138.1205625,
+      "end_s": 138.471,
+      "probability": 0.9800804,
+      "estimated": true
+    },
+    {
+      "text": "night,",
+      "start_s": 138.471,
+      "end_s": 139.129375,
+      "probability": 0.72158754,
+      "estimated": true
+    },
+    {
+      "text": "just",
+      "start_s": 139.129375,
+      "end_s": 139.5198125,
+      "probability": 0.99704415,
+      "estimated": true
+    },
+    {
+      "text": "at",
+      "start_s": 139.5198125,
+      "end_s": 139.86275,
+      "probability": 0.9708133,
+      "estimated": true
+    },
+    {
+      "text": "midnight",
+      "start_s": 139.86275,
+      "end_s": 140.1356875,
+      "probability": 0.839304,
+      "estimated": true
+    },
+    {
+      "text": "when",
+      "start_s": 140.1356875,
+      "end_s": 140.528625,
+      "probability": 0.6123894,
+      "estimated": true
+    },
+    {
+      "text": "all",
+      "start_s": 140.528625,
+      "end_s": 140.8840625,
+      "probability": 0.9997978,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 140.8840625,
+      "end_s": 141.2545,
+      "probability": 0.9672461,
+      "estimated": true
+    },
+    {
+      "text": "world",
+      "start_s": 141.2545,
+      "end_s": 141.57,
+      "probability": 0.68497944,
+      "estimated": true
+    },
+    {
+      "text": "slept.",
+      "start_s": 141.57,
+      "end_s": 142.355875,
+      "probability": 0.8313346,
+      "estimated": true
+    },
+    {
+      "text": "It",
+      "start_s": 142.355875,
+      "end_s": 142.6438125,
+      "probability": 0.8981261,
+      "estimated": true
+    },
+    {
+      "text": "has",
+      "start_s": 142.6438125,
+      "end_s": 143.02925,
+      "probability": 0.9423023,
+      "estimated": true
+    },
+    {
+      "text": "wellled",
+      "start_s": 143.02925,
+      "end_s": 143.755125,
+      "probability": 0.4251021,
+      "estimated": true
+    },
+    {
+      "text": "up",
+      "start_s": 143.755125,
+      "end_s": 144.1280625,
+      "probability": 0.99674755,
+      "estimated": true
+    },
+    {
+      "text": "in",
+      "start_s": 144.1280625,
+      "end_s": 144.4585,
+      "probability": 0.91193205,
+      "estimated": true
+    },
+    {
+      "text": "my",
+      "start_s": 144.4585,
+      "end_s": 144.7789375,
+      "probability": 0.9987419,
+      "estimated": true
+    },
+    {
+      "text": "own",
+      "start_s": 144.7789375,
+      "end_s": 145.101875,
+      "probability": 0.99951184,
+      "estimated": true
+    },
+    {
+      "text": "bosom.",
+      "start_s": 145.101875,
+      "end_s": 146.1531875,
+      "probability": 0.5137314,
+      "estimated": true
+    },
+    {
+      "text": "Deepening.[_EOT_]",
+      "start_s": 146.1531875,
+      "end_s": 147.5875,
+      "probability": 0.46154785,
+      "estimated": true
+    },
+    {
+      "text": "[_BEG_]Aining",
+      "start_s": 147.5875,
+      "end_s": 148.12,
+      "probability": 0.22243944,
+      "estimated": true
+    },
+    {
+      "text": "with",
+      "start_s": 148.12,
+      "end_s": 148.470875,
+      "probability": 0.929475,
+      "estimated": true
+    },
+    {
+      "text": "its",
+      "start_s": 148.470875,
+      "end_s": 148.87425,
+      "probability": 0.98759586,
+      "estimated": true
+    },
+    {
+      "text": "dreadful",
+      "start_s": 148.87425,
+      "end_s": 149.5334375,
+      "probability": 0.9983496,
+      "estimated": true
+    },
+    {
+      "text": "echo",
+      "start_s": 149.5334375,
+      "end_s": 149.9843125,
+      "probability": 0.93615586,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 149.9843125,
+      "end_s": 150.347625,
+      "probability": 0.9754684,
+      "estimated": true
+    },
+    {
+      "text": "terrors",
+      "start_s": 150.347625,
+      "end_s": 151.021875,
+      "probability": 0.58540803,
+      "estimated": true
+    },
+    {
+      "text": "that",
+      "start_s": 151.021875,
+      "end_s": 151.4451875,
+      "probability": 0.999123,
+      "estimated": true
+    },
+    {
+      "text": "distracted",
+      "start_s": 151.4451875,
+      "end_s": 151.8035625,
+      "probability": 0.9233559,
+      "estimated": true
+    },
+    {
+      "text": "me.",
+      "start_s": 151.8035625,
+      "end_s": 152.45525,
+      "probability": 0.9278065,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 152.45525,
+      "end_s": 152.833625,
+      "probability": 0.9666338,
+      "estimated": true
+    },
+    {
+      "text": "say",
+      "start_s": 152.833625,
+      "end_s": 153.272,
+      "probability": 0.93493176,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 153.272,
+      "end_s": 153.6428125,
+      "probability": 0.92913115,
+      "estimated": true
+    },
+    {
+      "text": "knew",
+      "start_s": 153.6428125,
+      "end_s": 154.0061875,
+      "probability": 0.97562474,
+      "estimated": true
+    },
+    {
+      "text": "it",
+      "start_s": 154.0061875,
+      "end_s": 154.3570625,
+      "probability": 0.99710125,
+      "estimated": true
+    },
+    {
+      "text": "well.",
+      "start_s": 154.3570625,
+      "end_s": 155.08875,
+      "probability": 0.5349573,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 155.08875,
+      "end_s": 155.382125,
+      "probability": 0.99858004,
+      "estimated": true
+    },
+    {
+      "text": "knew",
+      "start_s": 155.382125,
+      "end_s": 155.7479375,
+      "probability": 0.97745377,
+      "estimated": true
+    },
+    {
+      "text": "what",
+      "start_s": 155.7479375,
+      "end_s": 156.1913125,
+      "probability": 0.994575,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 156.1913125,
+      "end_s": 156.5596875,
+      "probability": 0.99700993,
+      "estimated": true
+    },
+    {
+      "text": "old",
+      "start_s": 156.5596875,
+      "end_s": 156.9355,
+      "probability": 0.9219683,
+      "estimated": true
+    },
+    {
+      "text": "man",
+      "start_s": 156.9355,
+      "end_s": 157.293875,
+      "probability": 0.9925416,
+      "estimated": true
+    },
+    {
+      "text": "felt",
+      "start_s": 157.293875,
+      "end_s": 157.64975,
+      "probability": 0.97806925,
+      "estimated": true
+    },
+    {
+      "text": "and",
+      "start_s": 157.64975,
+      "end_s": 157.9830625,
+      "probability": 0.85369915,
+      "estimated": true
+    },
+    {
+      "text": "pitted",
+      "start_s": 157.9830625,
+      "end_s": 158.7623125,
+      "probability": 0.20774844,
+      "estimated": true
+    },
+    {
+      "text": "him",
+      "start_s": 158.7623125,
+      "end_s": 159.130625,
+      "probability": 0.99427915,
+      "estimated": true
+    },
+    {
+      "text": "although",
+      "start_s": 159.130625,
+      "end_s": 159.4865,
+      "probability": 0.41948614,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 159.4865,
+      "end_s": 159.747375,
+      "probability": 0.9931343,
+      "estimated": true
+    },
+    {
+      "text": "chuckled",
+      "start_s": 159.747375,
+      "end_s": 160.5915625,
+      "probability": 0.75076467,
+      "estimated": true
+    },
+    {
+      "text": "that",
+      "start_s": 160.5915625,
+      "end_s": 160.9499375,
+      "probability": 0.89210624,
+      "estimated": true
+    },
+    {
+      "text": "heart.",
+      "start_s": 160.9499375,
+      "end_s": 161.646625,
+      "probability": 0.9281711,
+      "estimated": true
+    },
+    {
+      "text": "I",
+      "start_s": 161.646625,
+      "end_s": 162.035,
+      "probability": 0.9971393,
+      "estimated": true
+    },
+    {
+      "text": "knew",
+      "start_s": 162.035,
+      "end_s": 162.4233125,
+      "probability": 0.99343747,
+      "estimated": true
+    },
+    {
+      "text": "that",
+      "start_s": 162.4233125,
+      "end_s": 162.7366875,
+      "probability": 0.99659544,
+      "estimated": true
+    },
+    {
+      "text": "he",
+      "start_s": 162.7366875,
+      "end_s": 163.0425,
+      "probability": 0.9991154,
+      "estimated": true
+    },
+    {
+      "text": "had",
+      "start_s": 163.0425,
+      "end_s": 163.520875,
+      "probability": 0.98973805,
+      "estimated": true
+    },
+    {
+      "text": "been",
+      "start_s": 163.520875,
+      "end_s": 163.85175,
+      "probability": 0.99969107,
+      "estimated": true
+    },
+    {
+      "text": "laing",
+      "start_s": 163.85175,
+      "end_s": 164.5709375,
+      "probability": 0.4388214,
+      "estimated": true
+    },
+    {
+      "text": "awake",
+      "start_s": 164.5709375,
+      "end_s": 164.9693125,
+      "probability": 0.7087803,
+      "estimated": true
+    },
+    {
+      "text": "ever",
+      "start_s": 164.9693125,
+      "end_s": 165.337625,
+      "probability": 0.6133339,
+      "estimated": true
+    },
+    {
+      "text": "since",
+      "start_s": 165.337625,
+      "end_s": 165.711,
+      "probability": 0.99454087,
+      "estimated": true
+    },
+    {
+      "text": "the",
+      "start_s": 165.711,
+      "end_s": 165.974375,
+      "probability": 0.9932783,
+      "estimated": true
+    },
+    {
+      "text": "first",
+      "start_s": 165.974375,
+      "end_s": 166.4051875,
+      "probability": 0.9979936,
+      "estimated": true
+    },
+    {
+      "text": "slight",
+      "start_s": 166.4051875,
+      "end_s": 166.6985625,
+      "probability": 0.51953286,
+      "estimated": true
+    },
+    {
+      "text": "noise",
+      "start_s": 166.6985625,
+      "end_s": 167.0669375,
+      "probability": 0.9788848,
+      "estimated": true
+    },
+    {
+      "text": "when",
+      "start_s": 167.0669375,
+      "end_s": 167.51275,
+      "probability": 0.5637637,
+      "estimated": true
+    },
+    {
+      "text": "he",
+      "start_s": 167.51275,
+      "end_s": 167.858625,
+      "probability": 0.9992678,
+      "estimated": true
+    },
+    {
+      "text": "had",
+      "start_s": 167.858625,
+      "end_s": 168.247,
+      "probability": 0.9942943,
+      "estimated": true
+    },
+    {
+      "text": "turned",
+      "start_s": 168.247,
+      "end_s": 168.5778125,
+      "probability": 0.9923618,
+      "estimated": true
+    },
+    {
+      "text": "in",
+      "start_s": 168.5778125,
+      "end_s": 168.9061875,
+      "probability": 0.98534554,
+      "estimated": true
+    },
+    {
+      "text": "his",
+      "start_s": 168.9061875,
+      "end_s": 169.2645625,
+      "probability": 0.98740375,
+      "estimated": true
+    },
+    {
+      "text": "bed.",
+      "start_s": 169.2645625,
+      "end_s": 170.09875,
+      "probability": 0.89459735,
+      "estimated": true
+    },
+    {
+      "text": "His",
+      "start_s": 170.09875,
+      "end_s": 170.419625,
+      "probability": 0.9361809,
+      "estimated": true
+    },
+    {
+      "text": "fears",
+      "start_s": 170.419625,
+      "end_s": 170.7254375,
+      "probability": 0.9814067,
+      "estimated": true
+    },
+    {
+      "text": "had",
+      "start_s": 170.7254375,
+      "end_s": 171.0963125,
+      "probability": 0.9974398,
+      "estimated": true
+    },
+    {
+      "text": "been",
+      "start_s": 171.0963125,
+      "end_s": 171.5696875,
+      "probability": 0.9995347,
+      "estimated": true
+    },
+    {
+      "text": "growing",
+      "start_s": 171.5696875,
+      "end_s": 171.9355,
+      "probability": 0.9760714,
+      "estimated": true
+    },
+    {
+      "text": "upon",
+      "start_s": 171.9355,
+      "end_s": 172.203875,
+      "probability": 0.98314536,
+      "estimated": true
+    },
+    {
+      "text": "him",
+      "start_s": 172.203875,
+      "end_s": 172.66725,
+      "probability": 0.9995729,
+      "estimated": true
+    },
+    {
+      "text": "ever",
+      "start_s": 172.66725,
+      "end_s": 172.9430625,
+      "probability": 0.9822382,
+      "estimated": true
+    },
+    {
+      "text": "since.",
+      "start_s": 172.9430625,
+      "end_s": 173.7473125,
+      "probability": 0.9417453,
+      "estimated": true
+    },
+    {
+      "text": "He",
+      "start_s": 173.7473125,
+      "end_s": 174.080625,
+      "probability": 0.5411765,
+      "estimated": true
+    },
+    {
+      "text": "had",
+      "start_s": 174.080625,
+      "end_s": 174.4565,
+      "probability": 0.99401367,
+      "estimated": true
+    },
+    {
+      "text": "been",
+      "start_s": 174.4565,
+      "end_s": 174.797375,
+      "probability": 0.9997521,
+      "estimated": true
+    },
+    {
+      "text": "trying",
+      "start_s": 174.797375,
+      "end_s": 175.2281875,
+      "probability": 0.9983096,
+      "estimated": true
+    },
+    {
+      "text": "to",
+      "start_s": 175.2281875,
+      "end_s": 175.4790625,
+      "probability": 0.99874955,
+      "estimated": true
+    },
+    {
+      "text": "fancy",
+      "start_s": 175.4790625,
+      "end_s": 175.9599375,
+      "probability": 0.80775905,
+      "estimated": true
+    },
+    {
+      "text": "them.[_EOT_]",
+      "start_s": 175.9599375,
+      "end_s": 176.9825,
+      "probability": 0.60101223,
+      "estimated": true
+    },
+    {
+      "text": "[_BEG_]Coseless",
+      "start_s": 176.9825,
+      "end_s": 184.9714285714286,
+      "probability": 0.11624694,
+      "estimated": true
+    },
+    {
+      "text": "but",
+      "start_s": 184.9714285714286,
+      "end_s": 187.11428571428573,
+      "probability": 0.73613405,
+      "estimated": true
+    },
+    {
+      "text": "could",
+      "start_s": 187.11428571428573,
+      "end_s": 189.25714285714287,
+      "probability": 0.5356434,
+      "estimated": true
+    },
+    {
+      "text": "not.",
+      "start_s": 189.25714285714287,
+      "end_s": 193.54285714285714,
+      "probability": 0.5672909,
+      "estimated": true
+    },
+    {
+      "text": "He",
+      "start_s": 193.54285714285714,
+      "end_s": 195.68571428571428,
+      "probability": 0.9809894,
+      "estimated": true
+    },
+    {
+      "text": "had",
+      "start_s": 195.68571428571428,
+      "end_s": 197.82857142857142,
+      "probability": 0.9907882,
+      "estimated": true
+    },
+    {
+      "text": "been",
+      "start_s": 197.82857142857142,
+      "end_s": 199.9714285714286,
+      "probability": 0.9999504,
+      "estimated": true
+    },
+    {
+      "text": "saying.[_EOT_]",
+      "start_s": 199.9714285714286,
+      "end_s": 206.4,
+      "probability": 0.5457581,
+      "estimated": true
+    }
+  ]
+}

@@ -5,3 +5,4 @@ nahi=nahin
 haan=han
 kya=kyaa
 yeh=ye
+yah=ye
