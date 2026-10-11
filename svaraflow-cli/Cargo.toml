@@ -1,3 +1,4 @@
+# svaraflow-cli/Cargo.toml
 [package]
 name = "svaraflow-cli"
 description = "Command-line front end for SvaraFlow, reusing the core, asr, text and render crates."
@@ -7,6 +8,9 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+# Inherited from [workspace.package]; see the note in svaraflow-asr's
+# Cargo.toml.
+publish.workspace = true
 
 [features]
 # `vad` forwards to `svaraflow-asr`'s `vad` feature. Default on, so

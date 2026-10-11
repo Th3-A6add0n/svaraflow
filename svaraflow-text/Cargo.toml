@@ -1,3 +1,4 @@
+# svaraflow-text/Cargo.toml
 [package]
 name = "svaraflow-text"
 description = "SRT/VTT handling, dictionary, chunking, styles and translation for SvaraFlow."
@@ -7,6 +8,9 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+# Inherited from [workspace.package]; see the note in svaraflow-asr's
+# Cargo.toml.
+publish.workspace = true
 
 [dependencies]
 thiserror = "1"

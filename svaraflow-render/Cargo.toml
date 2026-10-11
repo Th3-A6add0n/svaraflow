@@ -1,3 +1,4 @@
+# svaraflow-render/Cargo.toml
 [package]
 name = "svaraflow-render"
 description = "Caption renderer for SvaraFlow (word-by-word animated captions)."
@@ -7,6 +8,9 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+# Inherited from [workspace.package]; see the note in svaraflow-asr's
+# Cargo.toml.
+publish.workspace = true
 
 [dependencies]
 thiserror = "1"

@@ -1,3 +1,4 @@
+// svaraflow-core/tests/xmeml_golden.rs
 //! Golden and structural tests for the FCP7 XML and CMX3600 EDL writers.
 
 use std::collections::HashMap;
@@ -25,6 +26,36 @@ fn update(name: &str, actual: &str) {
         let path = fixtures_dir().join(name);
         std::fs::write(&path, actual).unwrap();
     }
+}
+
+/// Replaces the content of every `<uuid>...</uuid>` with the fixed literal
+/// `UUID` so golden comparison does not depend on the value `write_xmeml`
+/// generates.
+///
+/// The sequence UUID is seeded from `RandomState` and `SystemTime` and is
+/// documented as not being a security token. Its value is guaranteed to
+/// differ between calls, so it can never be part of a byte-for-byte golden.
+/// Its *shape* is asserted separately by `uuid_has_expected_shape` so this
+/// normalisation does not lose coverage.
+fn normalize_uuid(xml: &str) -> String {
+    let mut out = String::with_capacity(xml.len());
+    let mut split = xml.split("<uuid>");
+    if let Some(head) = split.next() {
+        out.push_str(head);
+    }
+    for part in split {
+        match part.find("</uuid>") {
+            Some(i) => {
+                out.push_str("<uuid>UUID");
+                out.push_str(&part[i..]);
+            }
+            None => {
+                out.push_str("<uuid>");
+                out.push_str(part);
+            }
+        }
+    }
+    out
 }
 
 fn golden_timeline() -> Timeline {
@@ -95,8 +126,18 @@ fn xmeml_matches_golden() {
     let tl = golden_timeline();
     let sources = sources_for(&tl);
     let actual = write_xmeml(&tl, "Original Sequence", XmlProfile::Full, &sources).unwrap();
-    update("golden.xml", &actual);
-    assert_eq!(actual, golden("golden.xml"), "xmeml output changed");
+
+    // Write the fixture with the UUID normalised, so regeneration under
+    // UPDATE_GOLDEN=1 produces a file this test can match on every later
+    // run. Any other byte difference is a real change and still fails.
+    let actual_norm = normalize_uuid(&actual);
+    update("golden.xml", &actual_norm);
+
+    assert_eq!(
+        actual_norm,
+        normalize_uuid(&golden("golden.xml")),
+        "xmeml output changed"
+    );
 }
 
 #[test]
@@ -119,6 +160,31 @@ fn xmeml_is_valid_utf8_xml_shape() {
     assert!(xml.trim_end().ends_with("</xmeml>"));
     assert!(!xml.contains("..."));
     assert!(!xml.contains("TODO"));
+}
+
+/// The sequence UUID is normalised out of the golden comparison, so its
+/// shape must be checked here instead. FCP7 expects the canonical
+/// 8-4-4-4-12 hexadecimal form.
+#[test]
+fn uuid_has_expected_shape() {
+    let tl = golden_timeline();
+    let sources = sources_for(&tl);
+    let xml = write_xmeml(&tl, "T", XmlProfile::Full, &sources).unwrap();
+
+    let start = xml.find("<uuid>").expect("uuid element present");
+    let after = &xml[start + "<uuid>".len()..];
+    let end = after.find("</uuid>").expect("uuid closing tag present");
+    let uuid = &after[..end];
+
+    let parts: Vec<&str> = uuid.split('-').collect();
+    assert_eq!(parts.len(), 5, "uuid has five hyphen-separated groups: {uuid:?}");
+    for (group, expected_len) in parts.iter().zip([8usize, 4, 4, 4, 12]) {
+        assert_eq!(group.len(), expected_len, "group length in {uuid:?}");
+        assert!(
+            group.chars().all(|c| c.is_ascii_hexdigit()),
+            "non-hex character in {uuid:?}"
+        );
+    }
 }
 
 #[test]

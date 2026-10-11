@@ -1,3 +1,4 @@
+# svaraflow-core/Cargo.toml
 [package]
 name = "svaraflow-core"
 description = "Audio I/O, silence detection, timeline model, cut engine and FCP7 XML export for SvaraFlow."
@@ -7,6 +8,9 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+# Inherited from [workspace.package]; see the note in svaraflow-asr's
+# Cargo.toml.
+publish.workspace = true
 
 [dependencies]
 thiserror = "1"
@@ -32,4 +36,11 @@ symphonia = { version = "0.5", features = [
 rubato = "0.16"
 
 # XML writer for the FCP7 xmeml export.
-quick-xml = "0.37"
+#
+# Bumped from 0.37 to pick up fixes for RUSTSEC-2026-0194 (quadratic
+# duplicate-attribute check in Reader) and RUSTSEC-2026-0195 (unbounded
+# namespace allocation in NsReader). Neither path is reachable from this
+# crate — we only use quick-xml's `Writer`, never `Reader` or `NsReader` —
+# but the fixed version costs nothing and lets `cargo deny check
+# advisories` run with no ignore list.
+quick-xml = "0.41"

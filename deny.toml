@@ -1,3 +1,4 @@
+# deny.toml
 # cargo-deny configuration for SvaraFlow.
 # Goal: reject GPL/AGPL dependencies in the Rust dependency graph.
 
@@ -10,24 +11,52 @@ targets = [
 [advisories]
 version = 2
 yanked = "warn"
+# No ignore entries. quick-xml is upgraded rather than silenced; see
+# svaraflow-core/Cargo.toml.
 ignore = []
 
 [licenses]
 version = 2
 confidence-threshold = 0.9
+
+# Do not warn on allow-list entries that are not currently used. The
+# dependency graph differs between Windows and Linux and between feature
+# combinations (`vad`, `cuda`), so an entry that is unused today can become
+# required tomorrow without any code change. Warning on it would create
+# churn we would keep silencing.
+unused-allowed-license = "allow"
+
 allow = [
     "MIT",
     "Apache-2.0",
+    # Via `unicode-ident` / `icu_*` through `idna`. Present on both
+    # configured target triples.
     "Apache-2.0 WITH LLVM-exception",
+    # Via `ring` (through `ureq`/`rustls`). Present on both triples.
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
+    # Via `unicode-ident` / `zerovec`. Present on both triples.
     "Unicode-DFS-2016",
     "Unicode-3.0",
     "Zlib",
+    # Via `tinyvec` / `option-ext`. Present on both triples.
     "0BSD",
     "CC0-1.0",
     "MPL-2.0",
+    # Community Data License Agreement - Permissive 2.0. Required by
+    # `webpki-roots`, which ships Mozilla's CA certificate bundle as data
+    # (reached through `ureq` -> `rustls` -> `webpki-roots`). It is a
+    # permissive data license with no copyleft obligation and no
+    # attribution requirement on the consuming binary, so it is
+    # compatible with an MIT project.
+    "CDLA-Permissive-2.0",
+    # Public-domain dedication. Required by `whisper-rs` and
+    # `whisper-rs-sys`, the FFI wrappers around whisper.cpp that
+    # svaraflow-asr links against. It is strictly less restrictive than
+    # MIT: it introduces no obligation beyond what MIT already imposes,
+    # and no obligation we do not already accept.
+    "Unlicense",
 ]
 exceptions = []
 
@@ -35,6 +64,24 @@ exceptions = []
 multiple-versions = "warn"
 wildcards = "deny"
 highlight = "all"
+
+# Duplicate versions are expected and not removable from our side. The
+# three upstream consumers are:
+#
+# - `bindgen` (build-time bindings generator, pulled by whisper-rs-sys and
+#   ort-sys) — pins `shlex`, `libloading` 0.8 and an older `syn`.
+# - `symphonia` (audio decode, used by svaraflow-core) — pins `bitflags`
+#   1.x through `symphonia-core`.
+# - `ort` (ONNX Runtime bindings, used by svaraflow-asr) — pins
+#   `libloading` 0.9.
+#
+# `syn` 2 vs 3 is the proc-macro split: `thiserror-impl` and `bindgen` are
+# on 2, `clap_derive` and `serde_derive` are on 3.
+#
+# Run `cargo tree -d` for the exact current chains on this machine. `warn`
+# keeps the duplication visible without blocking CI, which is the right
+# level: none of these are fixable without patching upstream crates, and a
+# `deny` here would just be silenced with `skip` entries.
 
 [sources]
 unknown-registry = "deny"

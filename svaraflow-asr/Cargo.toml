@@ -1,3 +1,4 @@
+# svaraflow-asr/Cargo.toml
 [package]
 name = "svaraflow-asr"
 description = "Speech-to-text (whisper.cpp bindings), model selection, Silero VAD and hybrid mode for SvaraFlow."
@@ -7,6 +8,11 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+# Inherited from [workspace.package]. None of the internal crates are
+# published to crates.io; the shipped artifacts are the `svaraflow-cli`
+# binary and the Tauri app. Setting this stops cargo-deny from treating
+# the workspace-internal path deps as wildcard publishing targets.
+publish.workspace = true
 
 [features]
 # `vad` pulls in ONNX Runtime through `ort`, for the Silero VAD used to

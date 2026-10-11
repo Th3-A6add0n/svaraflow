@@ -1,3 +1,4 @@
+# Cargo.toml
 [workspace]
 resolver = "2"
 members = [
@@ -18,17 +19,27 @@ license = "MIT"
 repository = "https://github.com/Th3-A6add0n/svaraflow"
 homepage = "https://github.com/Th3-A6add0n/svaraflow"
 readme = "README.md"
+# Every member of this workspace is a private part of the SvaraFlow
+# application. None are published to crates.io; the shipping artifacts are
+# the `svaraflow-cli` binary and the Tauri app. Members opt in with
+# `publish.workspace = true` in their own `[package]` table.
+publish = false
 
 [workspace.dependencies]
-svaraflow-core = { path = "svaraflow-core" }
+# Internal path dependencies carry an explicit `version` so cargo-deny does
+# not classify them as wildcard dependencies. The version must equal
+# `workspace.package.version` above. When bumping the workspace version,
+# update all five `version =` fields below in the same commit. The
+# procedure is documented in CONTRIBUTING.md.
+svaraflow-core = { version = "0.0.1", path = "svaraflow-core" }
 # `default-features = false` here is what lets `svaraflow-cli` build with
 # `--no-default-features` and skip ONNX Runtime. Without it, Cargo ignores
 # the member-level override (pre-2024 edition) and the `vad` feature has no
 # effect on the dependency graph.
-svaraflow-asr = { path = "svaraflow-asr", default-features = false }
-svaraflow-text = { path = "svaraflow-text" }
-svaraflow-render = { path = "svaraflow-render" }
-svaraflow-rpc = { path = "svaraflow-rpc" }
+svaraflow-asr = { version = "0.0.1", path = "svaraflow-asr", default-features = false }
+svaraflow-text = { version = "0.0.1", path = "svaraflow-text" }
+svaraflow-render = { version = "0.0.1", path = "svaraflow-render" }
+svaraflow-rpc = { version = "0.0.1", path = "svaraflow-rpc" }
 
 [profile.release]
 lto = "thin"
