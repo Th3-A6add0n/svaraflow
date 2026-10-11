@@ -1,0 +1,54 @@
+{
+  "audio": "tests\\audio\\benchmark20s.wav",
+  "audio_decode_s": 0.0152365,
+  "decoder_threads": 6,
+  "duration_s": 27.8611875,
+  "engine_elapsed_s": 0.5376063,
+  "engine_rtf": 51.8245182394626,
+  "estimated_words": 51,
+  "load_s": 0.3235071,
+  "median_word_offset_ms": null,
+  "model": "Swift F16",
+  "native_decode": true,
+  "parallel": 2,
+  "ranges": [
+    {
+      "end_s": 8.0,
+      "start_s": 0.0
+    },
+    {
+      "end_s": 17.0,
+      "start_s": 9.0
+    },
+    {
+      "end_s": 27.0,
+      "start_s": 18.0
+    }
+  ],
+  "resample_s": 0.0117287,
+  "rtf_total": 31.365864968614083,
+  "timings": {
+    "audio_decode_s": 0.0152365,
+    "audio_duration_s": 27.8611875,
+    "chunk_plan_s": 5.9e-6,
+    "chunks": 3,
+    "dtw_usable": false,
+    "export_s": 0.0000534,
+    "model_load_s": 0.3235071,
+    "parallel": 2,
+    "postprocess_s": 0.0000688,
+    "real_time_factor": 31.365864968614083,
+    "resample_s": 0.0117287,
+    "system_info": "--- svaraflow ---\narch=x86_64\nos=windows\ntarget_avx2=false\ntarget_fma=false\ntarget_f16c=false\nruntime_avx2=true\nruntime_fma=true\nruntime_f16c=true\nruntime_avx512f=false\nlogical_cores=24\n--- whisper.cpp ---\nWHISPER : COREML = 0 | OPENVINO = 0 | CUDA : ARCHS = 750 | PEER_MAX_BATCH_SIZE = 128 | CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | REPACK = 1 | \n",
+    "total_wall_s": 0.8882646,
+    "transcribe_s": 0.5376063,
+    "vad_pack": false,
+    "vad_s": 0.0,
+    "whisper_full_s": 0.8055963
+  },
+  "total_s": 0.8882646,
+  "total_words": 51,
+  "vad_pack": false,
+  "wall_transcribe_s": 0.5376115,
+  "wer": null
+}
