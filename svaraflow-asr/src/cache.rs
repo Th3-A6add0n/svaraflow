@@ -79,7 +79,7 @@ pub fn hash_settings(model: &str, cfg: &TranscribeConfig) -> String {
         "model": model,
         "language": language,
         "decode": decode,
-        "use_dtw": cfg.use_dtw,
+        "token_timestamps": cfg.token_timestamps,
         "no_speech_threshold": cfg.no_speech_threshold,
         "repetition_guard": cfg.repetition_guard,
         "temperature_fallback": cfg.temperature_fallback,
@@ -256,6 +256,7 @@ impl CachedTranscript {
                 .segments
                 .iter()
                 .map(|s| Segment {
+                    low_confidence: false,
                     text: s.text.clone(),
                     start_s: s.start_s,
                     end_s: s.end_s,
@@ -431,7 +432,9 @@ mod tests {
     fn hash_settings_changes_with_language() {
         let mut c = cfg();
         let h1 = hash_settings("A", &c);
-        c.language = crate::transcribe::LanguageHint::Auto;
+        // Default is now `Auto`, so flip to `Hindi` to prove the field
+        // reaches the hash.
+        c.language = crate::transcribe::LanguageHint::Hindi;
         let h2 = hash_settings("A", &c);
         assert_ne!(h1, h2);
     }
@@ -466,6 +469,7 @@ mod tests {
     fn cached_round_trip_preserves_words() {
         let t = Transcript {
             segments: vec![Segment {
+                low_confidence: false,
                 text: "hello world".into(),
                 start_s: 0.0,
                 end_s: 1.0,

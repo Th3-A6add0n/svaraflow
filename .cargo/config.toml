@@ -1,0 +1,24 @@
+# .cargo/config.toml
+#
+# MSVC optimization flags for whisper-rs-sys.
+#
+# whisper-rs-sys 0.15.0 invokes cmake without CMAKE_BUILD_TYPE, so on
+# Windows/MSVC the Visual Studio generator leaves the release flags as
+# " -nologo -MD -Brepro -W0" — no /O2, no /DNDEBUG. whisper.cpp then
+# compiles at /Od and runs 8-10x slower than upstream. This file fixes
+# that.
+#
+# Why `[env]` and not `[target.<triple>.env]`: cargo's `[target.<triple>]`
+# table supports only `linker`, `runner`, and `rustflags`. An `.env`
+# sub-table there is silently ignored. `[env]` is the only mechanism
+# cargo provides for setting environment variables that reach the build
+# scripts of dependencies.
+#
+# Non-portability warning. These values are MSVC-only. On Linux or macOS
+# they would break the build. If a non-MSVC contributor joins, this file
+# needs a per-target mechanism (a wrapper script, or a fork of
+# whisper-rs-sys). See docs/BUILD.md.
+
+[env]
+CMAKE_C_FLAGS_RELEASE = "/MD /O2 /Ob2 /DNDEBUG"
+CMAKE_CXX_FLAGS_RELEASE = "/utf-8 /MD /O2 /Ob2 /DNDEBUG"

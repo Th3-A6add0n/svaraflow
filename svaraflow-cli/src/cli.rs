@@ -1,3 +1,4 @@
+// svaraflow-cli/src/cli.rs
 //! Command-line interface definitions for `svaraflow-cli`.
 
 use std::path::PathBuf;
@@ -110,9 +111,18 @@ pub struct TranscribeArgs {
     /// Domain vocabulary to bias the decoder. Comma-separated.
     #[arg(long, value_delimiter = ',')]
     pub vocabulary: Vec<String>,
-    /// Language hint: `hi` (default) or `auto`.
-    #[arg(long, default_value = "hi")]
+    /// Language hint: `auto` (default), `hi`, `en`, or any two-letter
+    /// code. `auto` lets whisper.cpp detect; our fine-tuned models write
+    /// Roman Hinglish regardless of the detected language token.
+    #[arg(long, default_value = "auto")]
     pub language: String,
+    /// Enable whisper.cpp's flash attention path. Off by default; test
+    /// before enabling on your hardware. See docs/PERF.md.
+    #[arg(long)]
+    pub flash_attn: bool,
+    /// Decoder threads. `0` (default) means all logical cores.
+    #[arg(long, default_value_t = 0)]
+    pub threads: usize,
     /// Do not read from or write to the transcript cache.
     #[arg(long)]
     pub no_cache: bool,
@@ -442,13 +452,15 @@ mod tests {
         };
         assert_eq!(t.input, PathBuf::from("a.mp4"));
         assert_eq!(t.tier, TierArg::Auto);
-        assert_eq!(t.language, "hi");
+        assert_eq!(t.language, "auto");
         assert!(!t.json);
         assert!(t.srt.is_none());
         assert!(t.vtt.is_none());
         assert!(t.ass.is_none());
         assert!(!t.no_dtw);
         assert!(!t.no_cache);
+        assert!(!t.flash_attn);
+        assert_eq!(t.threads, 0);
     }
 
     #[test]
@@ -495,6 +507,37 @@ mod tests {
         };
         assert_eq!(t.vocabulary, vec!["SvaraFlow", "Th3"]);
         assert_eq!(t.beam, Some(5));
+    }
+
+    #[test]
+    fn parses_transcribe_flash_attn_and_threads() {
+        let cli = Cli::try_parse_from([
+            "svaraflow-cli",
+            "transcribe",
+            "a.mp4",
+            "--flash-attn",
+            "--threads",
+            "12",
+        ])
+        .expect("parse");
+        let Command::Transcribe(t) = cli.command else {
+            panic!();
+        };
+        assert!(t.flash_attn);
+        assert_eq!(t.threads, 12);
+    }
+
+    #[test]
+    fn parses_transcribe_language_override() {
+        for (flag, expected) in [("auto", "auto"), ("hi", "hi"), ("en", "en"), ("fr", "fr")] {
+            let cli =
+                Cli::try_parse_from(["svaraflow-cli", "transcribe", "a.mp4", "--language", flag])
+                    .expect("parse");
+            let Command::Transcribe(t) = cli.command else {
+                panic!();
+            };
+            assert_eq!(t.language, expected);
+        }
     }
 
     #[test]

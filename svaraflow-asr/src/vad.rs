@@ -1,15 +1,15 @@
+// svaraflow-asr/src/vad.rs
 //! Silero VAD v5 through ONNX Runtime.
 //!
 //! Wraps `ort`'s `Session` in the engine-agnostic [`svaraflow_core::vad::Vad`]
 //! trait so the detector in `svaraflow-core` does not need to know about
-//! ONNX. The model is the standard Silero VAD v5 export: 512-sample windows
-//! at 16 kHz, `input`/`sr`/`state` in, `output`/`stateN` out.
+//! ONNX.
 //!
-//! # Tensor layout
+//! # Tensor layout (v5)
 //!
 //! | Name | Shape | Type | Meaning |
 //! | --- | --- | --- | --- |
-//! | `input` | `[1, 512]` | f32 | One window of audio |
+//! | `input` | `[1, 576]` | f32 | 64 samples of context followed by 512 new samples |
 //! | `sr` | `[1]` | i64 | Sample rate, always 16000 |
 //! | `state` | `[2, 1, 128]` | f32 | LSTM hidden state |
 //!
@@ -17,6 +17,14 @@
 //! | --- | --- | --- | --- |
 //! | `output` | `[1, 1]` | f32 | Speech probability for this window |
 //! | `stateN` | `[2, 1, 128]` | f32 | Updated LSTM state |
+//!
+//! Silero VAD v5 changed the input size from v4's `512` to `576` samples:
+//! every model call sees the tail of the previous window (64 samples)
+//! prepended to the current window (512 samples). Feeding a bare
+//! 512-sample window — as v4 allowed — makes the model return
+//! near-zero probability for every window. The context is threaded
+//! through locally in [`SileroVad::run`]; the hop, and therefore the
+//! window time in [`VadProbabilities::seconds_per_window`], stays 512.
 //!
 //! The state is fed back between calls, so the windows of one analysis
 //! signal must be processed in order. `speech_probabilities` resets the
@@ -44,6 +52,15 @@ use crate::error::AsrError;
 /// LSTM state shape, as two `[1, 128]` blocks.
 const STATE_SHAPE: [usize; 3] = [2, 1, 128];
 
+/// Number of samples of context Silero VAD v5 expects before each 512-sample
+/// window. The context is the tail of the previous window's input.
+const CONTEXT_SAMPLES: usize = 64;
+
+/// Full input size handed to the model: context plus one hop.
+///
+/// `512 + 64 = 576`. See the module docs for why this is not 512.
+const MODEL_INPUT_SAMPLES: usize = VAD_WINDOW_SAMPLES as usize + CONTEXT_SAMPLES;
+
 /// Silero VAD v5 running through ONNX Runtime.
 ///
 /// `Session::run` takes `&mut self`, so `speech_probabilities` in the `Vad`
@@ -60,11 +77,11 @@ pub struct SileroVad {
 impl SileroVad {
     /// Loads the Silero VAD ONNX model from `path`.
     ///
-    /// The model must be the standard v5 export: inputs `input` (`[1,512]`
-    /// f32), `sr` (`[1]` i64), `state` (`[2,1,128]` f32); outputs `output`
-    /// (`[1,1]` f32) and `stateN` (`[2,1,128]` f32). Input and output names
-    /// are discovered from the session, not hard-coded, so the older v4
-    /// export (which uses `h`/`c` instead of `state`) will also load.
+    /// The model must be the standard v5 export: input `input`
+    /// (`[1,576]` f32), `sr` (`[1]` i64), `state` (`[2,1,128]` f32);
+    /// outputs `output` (`[1,1]` f32) and `stateN` (`[2,1,128]` f32).
+    /// Input and output names are discovered from the session, not
+    /// hard-coded.
     ///
     /// # Errors
     ///
@@ -128,31 +145,40 @@ impl SileroVad {
         })
     }
 
-    /// Runs inference over `samples`, one 512-sample window at a time.
+    /// Runs inference over `samples`, one hop at a time.
     ///
-    /// The final partial window is zero-padded to 512 samples. Windows are
-    /// processed in order with the LSTM state fed back between them, so the
-    /// probabilities reflect the model's context.
+    /// Each model call sees `CONTEXT_SAMPLES` samples of context from the
+    /// previous call, followed by the current `VAD_WINDOW_SAMPLES` of
+    /// audio. The context for the first call is zeros. The final partial
+    /// hop is zero-padded. Windows are processed in order with the LSTM
+    /// state fed back between them.
     ///
     /// `&mut self` because `Session::run` takes a mutable receiver.
     fn run(&mut self, samples: &[f32]) -> Result<VadProbabilities, AsrError> {
-        let window = VAD_WINDOW_SAMPLES as usize;
-        let count = samples.len().div_ceil(window);
+        let hop = VAD_WINDOW_SAMPLES as usize;
+        let count = samples.len().div_ceil(hop);
         let mut probs = Vec::with_capacity(count);
 
         let mut state_data = vec![0.0f32; STATE_SHAPE.iter().product()];
-        let mut window_buf = vec![0.0f32; window];
+        let mut context = vec![0.0f32; CONTEXT_SAMPLES];
+        let mut model_input = vec![0.0f32; MODEL_INPUT_SAMPLES];
 
         for i in 0..count {
-            let start = i * window;
-            let end = (start + window).min(samples.len());
-            window_buf[..end - start].copy_from_slice(&samples[start..end]);
-            for s in &mut window_buf[end - start..] {
+            let start = i * hop;
+            let end = (start + hop).min(samples.len());
+            let new_len = end - start;
+
+            // model_input = context ++ new samples, zero-padded to the hop.
+            model_input[..CONTEXT_SAMPLES].copy_from_slice(&context);
+            model_input[CONTEXT_SAMPLES..CONTEXT_SAMPLES + new_len]
+                .copy_from_slice(&samples[start..end]);
+            for s in &mut model_input[CONTEXT_SAMPLES + new_len..] {
                 *s = 0.0;
             }
 
-            let input_tensor = Tensor::from_array(([1usize, window], window_buf.clone()))
-                .map_err(|e| AsrError::VadInference(e.to_string()))?;
+            let input_tensor =
+                Tensor::from_array(([1usize, MODEL_INPUT_SAMPLES], model_input.clone()))
+                    .map_err(|e| AsrError::VadInference(e.to_string()))?;
             let sr_tensor = Tensor::from_array(([1usize], vec![i64::from(VAD_SAMPLE_RATE)]))
                 .map_err(|e| AsrError::VadInference(e.to_string()))?;
             let state_tensor = Tensor::from_array((STATE_SHAPE, state_data.clone()))
@@ -195,6 +221,10 @@ impl SileroVad {
                     });
                 }
             }
+
+            // Next call's context is the last CONTEXT_SAMPLES of this
+            // model input.
+            context.copy_from_slice(&model_input[MODEL_INPUT_SAMPLES - CONTEXT_SAMPLES..]);
         }
 
         Ok(VadProbabilities {
@@ -275,6 +305,12 @@ mod tests {
     fn state_shape_has_256_elements() {
         let n: usize = STATE_SHAPE.iter().product();
         assert_eq!(n, 256);
+    }
+
+    #[test]
+    fn model_input_includes_context() {
+        assert_eq!(MODEL_INPUT_SAMPLES, 576);
+        assert_eq!(MODEL_INPUT_SAMPLES, VAD_WINDOW_SAMPLES as usize + 64);
     }
 
     #[test]

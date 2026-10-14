@@ -1,9 +1,11 @@
 // svaraflow-cli/src/bin/bench_asr.rs
 //! Benchmark one ASR model on one audio file.
 //!
-//! Prints a single JSON object with timing, accuracy and build metrics.
-//! `tools/bench-asr.ps1` calls this once per (model, mode, clip, switch
-//! set) and aggregates the results into Markdown tables.
+//! Every run is cache-free by design. The cache key does not include
+//! device, threads, flash attention, timestamps or language, so a cached
+//! result would silently stand in for a run under different settings.
+//! `--no-cache` is accepted and ignored here for symmetry with the CLI;
+//! `cache_hit` is always `false` in the JSON.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -29,10 +31,6 @@ use svaraflow_core::audio::{
 )]
 struct Args {
     /// Path to the GGML model file.
-    ///
-    /// Required for a benchmark run. Not required when `--system-info` is
-    /// given: that path only reads compile-time and CPU probes and exits
-    /// before any model is touched.
     #[arg(long, required_unless_present = "system_info")]
     model: Option<PathBuf>,
     /// Display name for the model, e.g. "Swift F16".
@@ -41,7 +39,7 @@ struct Args {
     /// Tier: `light` or `standard`. Informational.
     #[arg(long, default_value = "light")]
     tier: String,
-    /// Audio file: `.wav`, `.mp4`, or anything `symphonia` / `ffmpeg` can read.
+    /// Audio file.
     #[arg(long, required_unless_present = "system_info")]
     audio: Option<PathBuf>,
     /// Reference transcript for WER. Plain text.
@@ -50,7 +48,7 @@ struct Args {
     /// Labeled word timings. JSON array of `{ "word", "start", "end" }`.
     #[arg(long)]
     timing: Option<PathBuf>,
-    /// Language hint: `hi` or `auto`.
+    /// Language hint: `hi`, `en`, `auto`, or a two-letter code.
     #[arg(long, default_value = "hi")]
     language: String,
     /// Beam size. `0` or `1` means greedy.
@@ -59,8 +57,7 @@ struct Args {
     /// Optional Silero VAD model.
     #[arg(long)]
     vad_model: Option<PathBuf>,
-    /// Decoder threads *per whisper state*. `0` means "all logical cores
-    /// divided by --parallel".
+    /// Decoder threads *per whisper state*. `0` = all logical cores.
     #[arg(long, default_value_t = 0)]
     threads: usize,
     /// Enable whisper.cpp's flash attention path.
@@ -69,23 +66,26 @@ struct Args {
     /// Disable whisper.cpp's temperature fallback retries.
     #[arg(long, default_value_t = false)]
     no_temp_fallback: bool,
-    /// Disable the DTW timestamp request. Currently the only mode.
+    /// Ask whisper.cpp for token timestamps. Off by default.
     #[arg(long, default_value_t = false)]
-    no_dtw: bool,
+    timestamps: bool,
     /// Override whisper.cpp's audio context size, in frames.
     #[arg(long)]
     audio_ctx: Option<i32>,
-    /// Number of concurrent whisper states. Each runs in its own thread
-    /// with its own state.
+    /// Number of concurrent whisper states. Each runs in its own thread.
     #[arg(long, default_value_t = 1)]
     parallel: usize,
     /// Transcribe only these time ranges. File: `start_s,end_s` per line.
     #[arg(long)]
     ranges: Option<PathBuf>,
-    /// Drop silence and pack speech into full-length windows. Requires a VAD.
+    /// Drop silence and pack speech into full-length windows.
     #[arg(long, default_value_t = false)]
     vad_pack: bool,
-    /// Print the build and CPU probes and exit. No transcription.
+    /// Accepted for parity with `svaraflow-cli transcribe`. `bench-asr`
+    /// never reads or writes the cache regardless.
+    #[arg(long, default_value_t = false)]
+    no_cache: bool,
+    /// Print the build and CPU probes and exit.
     #[arg(long, default_value_t = false)]
     system_info: bool,
     /// Write JSON here instead of stdout.
@@ -111,10 +111,6 @@ fn main() -> Result<()> {
 }
 
 fn run(args: &Args) -> Result<serde_json::Value> {
-    // `--model`, `--model-name` and `--audio` are `Option` because
-    // `--system-info` does not need them. clap's
-    // `required_unless_present = "system_info"` already rejects a
-    // benchmark run that omits them.
     let model = args
         .model
         .as_ref()
@@ -131,12 +127,10 @@ fn run(args: &Args) -> Result<serde_json::Value> {
     let mut timings = Timings::default();
     let process_start = Instant::now();
 
-    // 1. Decode.
     let decode_start = Instant::now();
     let (native, native_decode) = load_native(audio_path)?;
     timings.audio_decode_s = decode_start.elapsed().as_secs_f64();
 
-    // 2. Resample.
     let (audio, resample_s) = if native.sample_rate == ANALYSIS_SAMPLE_RATE {
         (native, 0.0)
     } else {
@@ -151,11 +145,7 @@ fn run(args: &Args) -> Result<serde_json::Value> {
     let duration_s = audio.duration_seconds();
 
     let tier = Tier::parse(&args.tier).map_err(|e| anyhow!("{e}"))?;
-    let language = match args.language.trim().to_ascii_lowercase().as_str() {
-        "hi" | "hindi" => LanguageHint::Hindi,
-        "auto" | "" => LanguageHint::Auto,
-        other => return Err(anyhow!("--language must be `hi` or `auto`; got `{other}`")),
-    };
+    let language = LanguageHint::parse(&args.language);
 
     let ranges = if let Some(path) = &args.ranges {
         let text = std::fs::read_to_string(path)
@@ -192,7 +182,7 @@ fn run(args: &Args) -> Result<serde_json::Value> {
         } else {
             DecodeStrategy::Greedy
         },
-        use_dtw: !args.no_dtw,
+        token_timestamps: args.timestamps,
         initial_prompt: None,
         vocabulary: Vec::new(),
         temperature_fallback: !args.no_temp_fallback,
@@ -205,16 +195,16 @@ fn run(args: &Args) -> Result<serde_json::Value> {
         audio_ctx: args.audio_ctx,
         parallel: args.parallel.max(1),
         vad_pack: args.vad_pack,
-        // Cloned because `ranges` is also read into the JSON below. The
-        // vector is small (a handful of pairs), so the clone is free.
         ranges: ranges.clone(),
+        junk_guard: Default::default(),
+        max_phrase_s: svaraflow_asr::transcribe::DEFAULT_MAX_PHRASE_S,
+        max_phrase_words: svaraflow_asr::transcribe::DEFAULT_MAX_PHRASE_WORDS,
     };
     let decoder_threads = config.resolved_threads();
     let parallel = config.parallel;
 
     let vad_path = args.vad_model.as_deref().filter(|p| p.exists());
 
-    // 3. Model load.
     let load_start = Instant::now();
     let mut engine = Engine::load(model, &entry, vad_path, config)
         .map_err(|e| anyhow!("loading model `{}`: {e}", model.display()))?;
@@ -223,25 +213,17 @@ fn run(args: &Args) -> Result<serde_json::Value> {
     let cancel = AtomicBool::new(false);
     let mut progress = |_i: usize, _n: usize| {};
 
-    // 4. Transcribe.
     let transcribe_start = Instant::now();
     let transcript = engine
         .transcribe_with_timings(&audio, &mut progress, &cancel, &mut timings)
         .map_err(|e| anyhow!("transcription failed: {e}"))?;
     let wall_transcribe_s = transcribe_start.elapsed().as_secs_f64();
 
-    // Deliberately do not drop the Engine. On Windows with the CUDA
-    // backend, the teardown path triggered by `WhisperContext::drop` ->
-    // `whisper_free` -> CUDA driver cleanup aborts the process with
-    // `STATUS_STACK_BUFFER_OVERRUN` (exit code 0xC0000409) whenever the
-    // process was launched without a console and with redirected
-    // stdout/stderr, which is exactly how `tools/bench-asr.ps1` runs it.
-    // The work is already done and the JSON is already in memory; leaking
-    // the CUDA context costs nothing because the OS reclaims it at process
-    // exit. See docs/PERF.md.
+    // GPU teardown on Windows with redirected stdio aborts via
+    // `whisper_free` -> CUDA driver cleanup (STATUS_STACK_BUFFER_OVERRUN).
+    // Leaking the context is free because the process is about to exit.
     std::mem::forget(engine);
 
-    // 5. WER and word offset.
     let wer = if let Some(p) = &args.reference {
         let reference = std::fs::read_to_string(p)
             .with_context(|| format!("reading reference {}", p.display()))?;
@@ -261,7 +243,6 @@ fn run(args: &Args) -> Result<serde_json::Value> {
         None
     };
 
-    // 6. Export (JSON shape only).
     let export_start = Instant::now();
     let _ = serde_json::to_value(&transcript)?;
     timings.export_s = export_start.elapsed().as_secs_f64();
@@ -292,6 +273,14 @@ fn run(args: &Args) -> Result<serde_json::Value> {
         "parallel": parallel,
         "native_decode": native_decode,
         "vad_pack": args.vad_pack,
+        "timestamps": args.timestamps,
+        "flash_attn": args.flash_attn,
+        "backend": timings.backend,
+        "build_optimized": timings.build_optimized,
+        "build_flags": timings.build_flags,
+        "state_create_s": timings.state_create_s,
+        "device": timings.device,
+        "cache_hit": false,
         "ranges": ranges
             .as_ref()
             .map(|r| r.iter().map(|(s, e)| json!({ "start_s": s, "end_s": e })).collect::<Vec<_>>()),
@@ -299,7 +288,6 @@ fn run(args: &Args) -> Result<serde_json::Value> {
     }))
 }
 
-/// Decodes to native-rate mono. Returns `(audio, decoded_natively)`.
 fn load_native(path: &Path) -> Result<(MonoAudio, bool)> {
     match decode_native_mono(path) {
         Ok(a) => Ok((a, true)),
@@ -362,7 +350,6 @@ fn compute_wer(reference: &str, hypothesis: &str) -> f64 {
     }
     let n = ref_words.len();
     let m = hyp_words.len();
-
     let mut prev: Vec<u32> = (0..=m as u32).collect();
     let mut curr: Vec<u32> = vec![0; m + 1];
     for i in 1..=n {

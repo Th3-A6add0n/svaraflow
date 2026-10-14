@@ -68,3 +68,11 @@ Thumbs.db
 /temp*.ps1
 /repo-audit.txt
 /repo-tree.md
+
+# build output and scratch
+/target*/
+/scratch/
+
+# build output and scratch
+/target*/
+/scratch/

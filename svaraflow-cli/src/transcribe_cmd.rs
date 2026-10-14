@@ -1,13 +1,21 @@
 // svaraflow-cli/src/transcribe_cmd.rs
 //! `svaraflow-cli transcribe` and `svaraflow-cli models`.
+//!
+//! Every transcription run prints a diagnostics block on stderr:
+//! whisper.cpp's system info, the backend, the CUDA device (when
+//! applicable), the resolved thread count, and the full `FullParams`
+//! set we hand to whisper.cpp. The block is emitted by
+//! [`Engine::transcribe_with_timings`], so it appears whether the caller
+//! uses `transcribe` or `transcribe_with_timings`.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
+use std::time::Instant;
 
 use anyhow::{anyhow, Context, Result};
 use svaraflow_asr::{
     bench, cache, ensure_model, exports, models,
-    transcribe::{DecodeStrategy, Engine, LanguageHint, TranscribeConfig},
+    transcribe::{DecodeStrategy, Engine, LanguageHint, Timings, TranscribeConfig},
     AsrError, Manifest, ModelEntry, Tier,
 };
 use svaraflow_core::audio::ANALYSIS_SAMPLE_RATE;
@@ -68,9 +76,9 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
         audio.len()
     );
 
-    // The perf switches (`flash_attn`, `audio_ctx`, `parallel`, `vad_pack`,
-    // `ranges`) are deliberately not exposed on this CLI yet. Every one is
-    // at its default: off. See docs/PERF.md.
+    // `--threads` and `--flash-attn` are exposed on this CLI; the rest
+    // of the perf switches (`audio_ctx`, `parallel`, `vad_pack`,
+    // `ranges`) are at their defaults. See docs/PERF.md.
     let cfg = TranscribeConfig {
         tier,
         language: parse_language(&args.language)?,
@@ -80,7 +88,7 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
             },
             _ => DecodeStrategy::Greedy,
         },
-        use_dtw: !args.no_dtw,
+        token_timestamps: !args.no_dtw,
         initial_prompt: None,
         vocabulary: args.vocabulary.clone(),
         temperature_fallback: true,
@@ -88,30 +96,32 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
         repetition_guard: true,
         max_chunk_s: svaraflow_asr::DEFAULT_MAX_CHUNK_S,
         overlap_s: svaraflow_asr::DEFAULT_OVERLAP_S,
-        threads: 0,
-        flash_attn: false,
+        threads: args.threads,
+        flash_attn: args.flash_attn,
         audio_ctx: None,
         parallel: 1,
         vad_pack: false,
         ranges: None,
+        junk_guard: Default::default(),
+        max_phrase_s: svaraflow_asr::transcribe::DEFAULT_MAX_PHRASE_S,
+        max_phrase_words: svaraflow_asr::transcribe::DEFAULT_MAX_PHRASE_WORDS,
     };
-    if cfg.use_dtw {
-        eprintln!("using token-level DTW timestamps");
-    } else {
-        eprintln!("DTW disabled; word timing will be proportional and flagged as estimated");
-    }
-    eprintln!("decoder threads: {}", cfg.resolved_threads());
 
     let key = cache::key_for(&audio, &entry.name, &cfg);
     let mut transcript = if args.no_cache {
+        eprintln!("cache: disabled (--no-cache)");
         None
     } else {
-        cache::load(&key)
+        let hit = cache::load(&key);
+        if hit.is_some() {
+            eprintln!("CACHE HIT — result loaded from disk, no transcription ran");
+        }
+        hit
     };
 
     if let Some(t) = &transcript {
         eprintln!(
-            "cache hit: {} segments, {:.2} s transcribed in {:.2} s",
+            "cache: {} segments, {:.2} s audio transcribed in {:.2} s",
             t.segments.len(),
             t.audio_duration_s,
             t.elapsed_s
@@ -148,7 +158,12 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
             }
         };
 
-        match engine.transcribe(&audio, &mut progress, &cancel) {
+        // `transcribe_with_timings` emits the diagnostics block on
+        // stderr and fills `timings`. The block is what makes a run
+        // comparable to upstream whisper-cli at a glance.
+        let process_start = Instant::now();
+        let mut timings = Timings::default();
+        match engine.transcribe_with_timings(&audio, &mut progress, &cancel, &mut timings) {
             Ok(t) => transcript = Some(t),
             Err(AsrError::Cancelled) => {
                 eprintln!("\ncancelled");
@@ -156,16 +171,46 @@ pub fn run_transcribe(args: TranscribeArgs) -> Result<()> {
             }
             Err(e) => return Err(anyhow!("transcription failed: {e}")),
         }
+        timings.finalize(process_start.elapsed());
 
-        // Deliberately do not drop the Engine. On Windows with the CUDA
-        // backend, the teardown path triggered by `WhisperContext::drop`
-        // -> `whisper_free` -> CUDA driver cleanup aborts the process with
-        // `STATUS_STACK_BUFFER_OVERRUN` (exit code 0xC0000409) whenever
-        // the process was launched without a console and with redirected
-        // stdout/stderr, which is exactly how the CLI is invoked from
-        // host adapters. Leaking the CUDA context costs nothing because
-        // the OS reclaims it at process exit. See docs/PERF.md.
+        // Skip the CUDA teardown path (Windows + redirected stdio aborts
+        // with STATUS_STACK_BUFFER_OVERRUN). The process is about to exit.
         std::mem::forget(engine);
+
+        eprintln!(
+            "timings: total={:.3}s transcribe={:.3}s whisper_full={:.3}s chunks={}",
+            timings.total_wall_s, timings.transcribe_s, timings.whisper_full_s, timings.chunks,
+        );
+        if !timings.chunk_reasons.is_empty() {
+            eprintln!(
+                "chunk reasons: {}",
+                timings
+                    .chunk_reasons
+                    .iter()
+                    .map(|r| format!("{r:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        for w in &timings.windows {
+            eprintln!(
+                "  window {i}: {a:.2}s..{b:.2}s full={c:.3}s tokens={t} \
+                 mean_p={p:.2} junk={j:.2} no_speech={ns:.2}{lc}",
+                i = w.index,
+                a = w.start_s,
+                b = w.end_s,
+                c = w.whisper_full_s,
+                t = w.tokens,
+                p = w.mean_probability,
+                j = w.junk_fraction,
+                ns = w.no_speech_prob,
+                lc = if w.low_confidence {
+                    " LOW_CONFIDENCE"
+                } else {
+                    ""
+                },
+            );
+        }
 
         if let Some(t) = &transcript {
             if !args.no_cache {
@@ -380,12 +425,21 @@ fn load_audio(path: &Path) -> Result<MonoAudio> {
     }
 }
 
+/// Parses `--language`.
+///
+/// Accepts `auto` (default), `hi`, `en`, or any bare two-letter ASCII
+/// code. Longer strings are rejected so a typo like `french` or `xyz`
+/// does not silently become a bad whisper.cpp language hint.
 fn parse_language(s: &str) -> Result<LanguageHint> {
     match s.trim().to_ascii_lowercase().as_str() {
         "hi" | "hindi" => Ok(LanguageHint::Hindi),
+        "en" | "english" => Ok(LanguageHint::English),
         "auto" | "" => Ok(LanguageHint::Auto),
+        other if other.len() == 2 && other.chars().all(|c| c.is_ascii_alphabetic()) => {
+            Ok(LanguageHint::Other)
+        }
         other => Err(anyhow!(
-            "--language must be `hi`, `hindi`, or `auto`; got `{other}`"
+            "--language must be `auto`, `hi`, `en`, or a two-letter code; got `{other}`"
         )),
     }
 }
@@ -398,12 +452,23 @@ mod tests {
     fn parse_language_accepts_known_values() {
         assert_eq!(parse_language("hi").unwrap(), LanguageHint::Hindi);
         assert_eq!(parse_language("Hindi").unwrap(), LanguageHint::Hindi);
+        assert_eq!(parse_language("en").unwrap(), LanguageHint::English);
+        assert_eq!(parse_language("English").unwrap(), LanguageHint::English);
         assert_eq!(parse_language("auto").unwrap(), LanguageHint::Auto);
         assert_eq!(parse_language("").unwrap(), LanguageHint::Auto);
     }
 
     #[test]
-    fn parse_language_rejects_unknown() {
-        assert!(parse_language("fr").is_err());
+    fn parse_language_accepts_two_letter_codes() {
+        assert_eq!(parse_language("fr").unwrap(), LanguageHint::Other);
+        assert_eq!(parse_language("de").unwrap(), LanguageHint::Other);
+        assert_eq!(parse_language("JA").unwrap(), LanguageHint::Other);
+    }
+
+    #[test]
+    fn parse_language_rejects_long_unknown() {
+        assert!(parse_language("french").is_err());
+        assert!(parse_language("xyz").is_err());
+        assert!(parse_language("hindi ").is_ok());
     }
 }
